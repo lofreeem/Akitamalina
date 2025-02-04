@@ -1,0 +1,645 @@
+/* Подключение шрифта */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Merriweather:wght@400;700&display=swap');
+
+/* Общие стили */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    text-decoration: none;
+    border: none;
+    outline: none;
+    font-family: 'Poppins', sans-serif;
+    transition: all 0.3s ease; /* Плавные переходы для всех элементов */
+}
+
+html {
+    font-size: 62.5%; /* 1rem = 10px */
+    scroll-behavior: smooth; /* Плавная прокрутка */
+}
+
+body {
+    background: #121212;
+    color: #f0f0f0;
+    font-size: 1.6rem;
+    height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    cursor: none;
+  
+  
+}
+
+/* Стили для фона */
+body, section {
+    background-image: url('https://your-image-url.com/background.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed; /* Зафиксированный фон при прокрутке */
+}
+
+section::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: inherit;
+    filter: blur(6px);
+    z-index: -1;
+}
+
+/* Header */
+header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 2.5rem 10%;
+    background-color: rgba(47, 47, 47, 0.9);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 100;
+    border-bottom: 4px solid #9c74b5;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+header:hover {
+    background-color: rgba(58, 58, 58, 1);
+    box-shadow: 0 6px 35px rgba(0, 0, 0, 0.9);
+}
+
+.logo {
+    font-size: 3.8rem;
+    color: #9c74b5;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.4s ease, color 0.3s ease, text-shadow 0.3s ease;
+    letter-spacing: 2px;
+    text-shadow: 2px 2px 20px rgba(0, 0, 0, 0.8);
+}
+
+.logo:hover {
+    transform: scale(1.1);
+    color: #fff;
+    text-shadow: 3px 3px 25px rgba(156, 116, 181, 0.9);
+}
+
+nav a {
+    font-size: 2.5rem;
+    color: #dcdcdc;
+    margin-left: 4.5rem;
+    font-weight: 500;
+    position: relative;
+    transition: color 0.3s ease, transform 0.3s ease, text-shadow 0.3s ease, letter-spacing 0.3s ease;
+}
+
+nav a::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 3px;
+    background-color: #9c74b5;
+    left: 0;
+    bottom: -7px;
+    transform: scaleX(0);
+    transform-origin: bottom right;
+    transition: transform 0.3s ease-out;
+}
+
+nav a:hover,
+nav a.active {
+    color: #9c74b5;
+    transform: translateY(-6px);
+    text-shadow: 0 0 20px rgba(156, 116, 181, 0.9);
+    letter-spacing: 1px;
+}
+
+nav a:hover::after,
+nav a.active::after {
+    transform: scaleX(1);
+    transform-origin: bottom left;
+}
+
+/* Адаптивность для мобильных устройств */
+@media(max-width: 995px) {
+    header {
+        padding: 2.5rem 4%;
+    }
+
+    .logo {
+        font-size: 3.2rem;
+    }
+
+    nav {
+        position: absolute;
+        display: none;
+        top: 6rem;
+        right: 0;
+        width: 80%;
+        background-color: #2f2f2f;
+        padding: 2rem;
+        border-radius: 1.5rem;
+        border: 1px solid #9c74b5;
+        box-shadow: 0 0 35px rgba(0, 0, 0, 0.9);
+    }
+
+    nav.active {
+        display: block;
+    }
+
+    nav a {
+        font-size: 2.6rem;
+        margin: 4rem 0;
+        text-align: center;
+    }
+
+    nav a:hover,
+    nav a.active {
+        padding: 1.5rem;
+        border-radius: 1rem;
+        border-bottom: 0.5rem solid #9c74b5;
+    }
+}
+
+/* Главная секция */
+section {
+    min-height: 100vh;
+    padding: 10rem 9% 5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10rem;
+    transition: padding 0.5s ease, transform 0.3s ease;
+    position: relative;
+}
+
+/* Основной контент */
+.home-content {
+    max-width: 55%;
+    transition: transform 0.4s ease, color 0.3s ease;
+}
+
+.home-content h1 {
+    font-size: 8rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 2.5rem;
+    color: #fff;
+    text-shadow: 5px 5px 30px rgba(0, 0, 0, 0.8);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+span {
+    color: #9c74b5;
+}
+
+.home-content h3 {
+    font-size: 6rem;
+    margin-bottom: 4rem;
+    font-weight: 600;
+    color: #fff;
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.home-content p {
+    font-size: 2.4rem;
+    color: #bbb;
+    line-height: 1.8;
+    transition: transform 0.3s ease, color 0.3s ease;
+    margin-bottom: 4rem;
+}
+
+.home-img {
+    position: relative;
+    width: 100%;
+    max-width: 600px; /* или любое другое значение для нужного размера */
+    height: auto;
+    border-radius: 50%; /* Круглая форма для фотографии */
+    box-shadow: 0 0 60px rgba(156, 116, 181, 0.7), 0 0 100px rgba(0, 242, 255, 0.8); /* Эфирный эффект */
+    transition: transform 0.3s ease, box-shadow 0.4s ease, filter 0.3s ease;
+    overflow: hidden; /* Обеспечивает обрезку изображения по границам */
+}
+
+/* Эффекты при наведении на изображение */
+.home-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Изображение будет покрывать всю область, сохраняя пропорции */
+    filter: brightness(0.8) contrast(1.2); /* Темнее изображение с повышенным контрастом */
+    transition: transform 0.3s ease, filter 0.3s ease;
+    border-radius: 50%; /* Скругление углов изображения */
+}
+
+/* При наведении — увеличение изображения */
+.home-img:hover {
+    transform: scale(1.1); /* Увеличение на 10% */
+    box-shadow: 0 0 120px rgba(156, 116, 181, 0.9), 0 0 150px rgba(0, 242, 255, 1); /* Увеличение тени */
+}
+
+/* При наведении на саму фотографию */
+.home-img img:hover {
+    filter: brightness(1) contrast(1.5); /* Яркость и контраст возвращаются к норме, создавая эффект свечения */
+    transform: scale(1.1); /* Увеличение изображения */
+}
+
+/* Социальные иконки */
+.social-icons a {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 6rem;
+    height: 6rem;
+    background-color: transparent;
+    border: 0.3rem solid #dcdcdc;
+    font-size: 3.5rem;
+    border-radius: 50%;
+    margin-right: 3rem;
+    color: #dcdcdc;
+    transition: transform 0.3s ease, color 0.3s ease, background-color 0.3s ease, box-shadow 0.4s ease;
+}
+
+.social-icons a:hover {
+    transform: scale(1.5) translateY(-10px);
+    color: black;
+    background-color: #9c74b5;
+    box-shadow: 0 0 50px rgba(156, 116, 181, 0.9);
+}
+
+/* Кнопка */
+.btn {
+    padding: 2.2rem 5.5rem;
+    background-color: #121212;
+    border-radius: 5rem;
+    font-size: 2.4rem;
+    color: #9c74b5;
+    font-weight: 600;
+    text-transform: uppercase;
+    border: 2px solid #9c74b5;
+    transition: background-color 0.3s ease, color 0.3s ease, transform 0.3s ease, box-shadow 0.4s ease;
+    cursor: pointer;
+}
+
+.btn:hover {
+    transform: scale(1.1);
+    background-color: #9c74b5;
+    color: #121212;
+    box-shadow: 0 0 50px rgba(156, 116, 181, 0.8);
+}
+
+/* Плавная прокрутка */
+html {
+    scroll-behavior: smooth;
+}
+
+section {
+    transition: padding 0.5s ease-in-out;
+}
+
+@media(max-width: 600px) {
+    .home-content h1 {
+        font-size: 5rem;
+    }
+    .home-content h3 {
+        font-size: 4rem;
+    }
+}
+
+.cursor-wrapper {
+    position: absolute;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    will-change: transform;
+  }
+  
+  .cursor,
+  .cursor-glow,
+  .cursor-inner-glow,
+  .cursor-trail,
+  .cursor-ripple {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  
+  .cursor {
+    width: 25px;
+    height: 25px;
+    background: radial-gradient(circle, #00f2ff, #ff77ff);
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.9), 0 0 30px rgba(255, 119, 255, 0.8);
+    filter: blur(1px);
+    transition: transform 0.1s ease, 
+  }
+  
+  .cursor-glow {
+    width: 70px;
+    height: 70px;
+    background: rgba(0, 255, 255, 0.3);
+    box-shadow: 0 0 100px rgba(0, 255, 255, 0.9);
+    opacity: 0.5;
+    transition: transform 0.3s ease, opacity 0.4s ease;
+  }
+  
+  .cursor-inner-glow {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 50px rgba(255, 255, 255, 0.8);
+    opacity: 0.4;
+  }
+  
+  .cursor-trail {
+    width: 90px;
+    height: 90px;
+    background: rgba(0, 255, 255, 0.1);
+    box-shadow: 0 0 100px rgba(0, 255, 255, 0.6);
+    opacity: 0.2;
+    transform: scale(0.7);
+    transition: transform 0.1s ease, opacity 0.3s ease;
+  }
+  
+  .cursor-ripple {
+    width: 200px;
+    height: 200px;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 150px rgba(0, 255, 255, 0.7), 0 0 200px rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    transform: scale(2);
+    transition: opacity 0.3s ease;
+  }
+  
+  a {
+    text-decoration: none;
+    color: #00f2ff;
+    font-size: 22px;
+    font-weight: bold;
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+  
+  a:hover {
+    color: #ff77ff;
+    transform: scale(1.2);
+  }
+  
+  @keyframes rippleEffect {
+    0% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(2);
+    }
+  }
+  
+  @keyframes wiggleEffect {
+    0% {
+      transform: rotate(0deg);
+    }
+    25% {
+      transform: rotate(30deg);
+    }
+    50% {
+      transform: rotate(-30deg);
+    }
+    75% {
+      transform: rotate(30deg);
+    }
+    100% {
+      transform: rotate(0deg);
+    }
+  }
+  
+  @keyframes pulseGlow {
+    0% {
+      box-shadow: 0 0 30px rgba(0, 255, 255, 0.5), 0 0 40px rgba(255, 119, 255, 0.8);
+    }
+    100% {
+      box-shadow: 0 0 100px rgba(0, 255, 255, 1), 0 0 150px rgba(255, 119, 255, 1);
+    }
+  }
+  .background-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    will-change: transform;
+    z-index: -1;
+    animation: animateLayer 20s infinite linear;
+  }
+  
+  .layer-1 {
+    background: radial-gradient(circle, rgba(255, 0, 255, 0.2) 0%, rgba(0, 0, 0, 0.5) 100%);
+    opacity: 0.3;
+    box-shadow: 0 0 80px rgba(255, 0, 255, 0.8);
+  }
+  
+  .layer-2 {
+    background: radial-gradient(circle, rgba(0, 255, 255, 0.1) 0%, rgba(0, 0, 0, 0.4) 100%);
+    opacity: 0.4;
+    box-shadow: 0 0 120px rgba(0, 255, 255, 0.8);
+  }
+  
+  .layer-3 {
+    background: radial-gradient(circle, rgba(0, 0, 255, 0.1) 0%, rgba(0, 0, 0, 0.6) 100%);
+    opacity: 0.5;
+    box-shadow: 0 0 150px rgba(0, 0, 255, 0.9);
+  }
+  
+  @keyframes animateLayer {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+  
+  
+  @keyframes moveLayer1 {
+    0% {
+      transform: translate(0, 0) rotate(0deg);
+    }
+    100% {
+      transform: translate(100px, 100px) rotate(180deg);
+    }
+  }
+  
+  @keyframes moveLayer2 {
+    0% {
+      transform: translate(-100px, -100px) rotate(0deg);
+    }
+    100% {
+      transform: translate(200px, 200px) rotate(180deg);
+    }
+  }
+  
+  @keyframes moveLayer3 {
+    0% {
+      transform: translate(50px, 50px) rotate(0deg);
+    }
+    100% {
+      transform: translate(-150px, -150px) rotate(180deg);
+    }
+  }
+  /* Общие стили */
+.intro {
+    background: linear-gradient(135deg, rgba(58, 26, 96, 0.9), rgba(156, 116, 181, 0.9)), url('path_to_your_mystical_background_image.jpg');
+    background-size: cover;
+    background-position: center;
+    color: #fff;
+    padding: 6rem 8%;
+    border-radius: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    position: relative;
+    font-family: 'Merriweather', serif;
+    text-align: center;
+    margin-top: 5rem;
+    transition: all 0.3s ease;
+    background-attachment: fixed;
+    border: 2px solid #fff;
+  }
+  
+  /* Заголовок */
+  .intro-title {
+    font-size: 4rem;
+    font-weight: 800;
+    color: #f1e6ff;
+    margin-bottom: 2.5rem;
+    text-shadow: 2px 2px 10px rgba(0, 0, 0, 0.5);
+    line-height: 1.2;
+  }
+  
+  /* Подзаголовки */
+  .intro-subtitle {
+    font-size: 2.6rem;
+    margin-top: 3rem;
+    margin-bottom: 2rem;
+    color: #fff;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  
+  /* Список с описаниями */
+  .intro-description, .intro-solutions, .intro-help, .intro-results {
+    font-size: 1.9rem;
+    line-height: 2.2;
+    margin-bottom: 2rem;
+  }
+  
+  .intro-description ul, .intro-solutions ul, .intro-help ul, .intro-results ul {
+    list-style-type: none;
+    padding-left: 0;
+  }
+  
+  .intro-description li, .intro-solutions li, .intro-help li, .intro-results li {
+    margin-bottom: 2rem;
+    font-weight: 400;
+  }
+  
+  .intro-description strong, .intro-solutions strong, .intro-help strong, .intro-results strong {
+    color: #ff9e00;
+    font-weight: 700;
+    font-size: 2rem;
+  }
+  
+  /* Кнопка */
+  .telegram-btn {
+    display: inline-block;
+    background-color: #00bfff;
+    padding: 1.5rem 3rem;
+    color: white;
+    font-size: 1.8rem;
+    font-weight: 700;
+    border-radius: 30px;
+    margin-top: 3rem;
+    text-decoration: none;
+    transition: background-color 0.3s ease;
+  }
+  
+  .telegram-btn:hover {
+    background-color: #008fb3;
+  }
+  
+  .telegram-btn:active {
+    background-color: #006f88;
+  }
+  
+  /* Адаптивность */
+  @media (max-width: 1024px) {
+    .intro {
+      padding: 5rem 6%;
+    }
+  
+    .intro-title {
+      font-size: 3.5rem;
+    }
+  
+    .intro-subtitle {
+      font-size: 2.4rem;
+    }
+  
+    .intro-description, .intro-solutions, .intro-help, .intro-results {
+      font-size: 1.7rem;
+    }
+  
+    .telegram-btn {
+      font-size: 1.6rem;
+    }
+  }
+  
+  /* Мобильная версия */
+  @media (max-width: 768px) {
+    .intro {
+      padding: 4rem 5%;
+    }
+  
+    .intro-title {
+      font-size: 3rem;
+    }
+  
+    .intro-subtitle {
+      font-size: 2.2rem;
+    }
+  
+    .intro-description, .intro-solutions, .intro-help, .intro-results {
+      font-size: 1.6rem;
+    }
+  
+    .telegram-btn {
+      font-size: 1.5rem;
+      padding: 1.2rem 2.4rem;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .intro {
+      padding: 3rem 4%;
+    }
+  
+    .intro-title {
+      font-size: 2.6rem;
+    }
+  
+    .intro-subtitle {
+      font-size: 2rem;
+    }
+  
+    .intro-description, .intro-solutions, .intro-help, .intro-results {
+      font-size: 1.4rem;
+    }
+  
+    .telegram-btn {
+      font-size: 1.4rem;
+      padding: 1rem 2rem;
+    }
+  }
+  
+  
