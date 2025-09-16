@@ -2,56 +2,55 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Wave P2P Chat</title>
+<title>P2P Draw</title>
 <style>
 body { font-family: monospace; background:#111; color:#0f0; display:flex; flex-direction:column; align-items:center; padding:20px;}
-#messages { width:400px; height:200px; overflow-y:auto; border:1px solid #0f0; padding:5px; margin-bottom:10px;}
-input { width:400px; margin-bottom:10px; }
-button { margin:2px; }
+canvas { border:1px solid #0f0; margin-bottom:10px;}
+#messages { width:500px; height:150px; overflow-y:auto; border:1px solid #0f0; padding:5px; margin-bottom:10px;}
+button { margin:5px; }
 </style>
 </head>
 <body>
-<h2>Авто P2P Chat</h2>
+<h2>P2P Draw Chat</h2>
+<canvas id="draw" width="400" height="300"></canvas>
+<button onclick="sendDrawing()">Отправить рисунок</button>
 <div id="messages"></div>
-<input id="input" placeholder="Введите сообщение и Enter">
 <button onclick="start()">Начать комнату</button>
 
 <script>
+const canvas = document.getElementById("draw");
+const ctx = canvas.getContext("2d");
 const messages = document.getElementById("messages");
-const input = document.getElementById("input");
 
-let peers = {};        // {peerId: RTCPeerConnection}
-let channels = {};     // {peerId: DataChannel}
-let uid = Math.random().toString(36).substr(2,6);
+let drawing=false;
+canvas.addEventListener("mousedown", e=>drawing=true);
+canvas.addEventListener("mouseup", e=>drawing=false);
+canvas.addEventListener("mouseout", e=>drawing=false);
+canvas.addEventListener("mousemove", e=>{
+  if(!drawing) return;
+  ctx.fillStyle="#0f0";
+  ctx.fillRect(e.offsetX,e.offsetY,4,4);
+});
 
-// Псевдо-публичное хранилище через localStorage (для примера)
-let roomKey = 'waveRoom';
+// ===== P2P =====
+let peers={}, channels={}, uid=Math.random().toString(36).substr(2,6);
+let roomKey='waveRoom';
 let signals = JSON.parse(localStorage.getItem(roomKey)||'{}');
 
-function log(msg){
-  const d=document.createElement("div"); d.textContent=msg; messages.appendChild(d);
-  messages.scrollTop = messages.scrollHeight;
-}
+function log(msg){ const d=document.createElement("div"); d.textContent=msg; messages.appendChild(d); messages.scrollTop=messages.scrollHeight; }
 
-// ===== Инициализация комнаты =====
 function start(){
-  log("Комната запущена. Ждите новых игроков...");
-  window.addEventListener("storage", receiveSignal); // слушаем новые сигналы
+  log("Комната запущена...");
+  window.addEventListener("storage", receiveSignal);
   broadcastSignal({type:'hello', from:uid});
 }
 
-// ===== WebRTC peer connection =====
 function createPeer(remoteId, offer){
   const pc = new RTCPeerConnection();
   peers[remoteId]=pc;
-
   const channel = pc.createDataChannel("wave");
   setupChannel(remoteId, channel);
-
-  pc.onicecandidate = e=>{
-    if(e.candidate) broadcastSignal({type:'ice', from:uid, to:remoteId, ice:e.candidate});
-  };
-
+  pc.onicecandidate = e=>{ if(e.candidate) broadcastSignal({type:'ice', from:uid, to:remoteId, ice:e.candidate}); };
   if(offer){
     pc.setRemoteDescription(new RTCSessionDescription(offer)).then(()=>{
       pc.createAnswer().then(answer=>{
@@ -67,52 +66,47 @@ function createPeer(remoteId, offer){
   }
 }
 
-// ===== Настройка канала =====
 function setupChannel(pid, channel){
   channels[pid]=channel;
   channel.onopen = ()=>log("Канал открыт с "+pid);
-  channel.onmessage = e=>log(pid+": "+e.data);
+  channel.onmessage = e=>{
+    if(e.data.startsWith("data:image")){
+      const img = new Image();
+      img.src=e.data;
+      img.onload = ()=>ctx.drawImage(img,0,0);
+      log("Получен рисунок от "+pid);
+    } else log(pid+": "+e.data);
+  };
 }
 
-// ===== Отправка сообщений =====
-input.addEventListener("keydown", e=>{
-  if(e.key==="Enter" && input.value.trim()!==""){
-    const msg=input.value.trim();
-    Object.values(channels).forEach(ch=>{
-      if(ch.readyState==="open") ch.send(msg);
-    });
-    log("Me: "+msg);
-    input.value="";
-  }
-});
+// ===== Отправка рисунка =====
+function sendDrawing(){
+  const dataURL = canvas.toDataURL("image/png");
+  Object.values(channels).forEach(ch=>{
+    if(ch.readyState==="open") ch.send(dataURL);
+  });
+  log("Рисунок отправлен!");
+}
 
-// ===== «Волновая» отправка сигналов через localStorage =====
+// ===== Волновая синхронизация сигналов =====
 function broadcastSignal(obj){
   signals[Date.now()+'_'+Math.random()]=obj;
   localStorage.setItem(roomKey, JSON.stringify(signals));
-  // сами же обработаем сразу
   receiveSignal({newValue: JSON.stringify(signals)});
 }
 
-// ===== Обработка сигналов =====
 function receiveSignal(e){
   if(!e.newValue) return;
   const allSignals = JSON.parse(e.newValue);
   Object.values(allSignals).forEach(signal=>{
-    if(signal.from===uid) return; // игнорируем свои
-    if(signal.to && signal.to!==uid) return; // не для нас
-    if(signal.type==='hello'){
-      if(!peers[signal.from]) createPeer(signal.from);
-    } else if(signal.type==='offer'){
-      if(!peers[signal.from]) createPeer(signal.from, signal.offer);
-    } else if(signal.type==='answer'){
-      peers[signal.from].setRemoteDescription(new RTCSessionDescription(signal.answer));
-    } else if(signal.type==='ice'){
-      peers[signal.from].addIceCandidate(new RTCIceCandidate(signal.ice));
-    }
+    if(signal.from===uid) return;
+    if(signal.to && signal.to!==uid) return;
+    if(signal.type==='hello'){ if(!peers[signal.from]) createPeer(signal.from); }
+    else if(signal.type==='offer'){ if(!peers[signal.from]) createPeer(signal.from, signal.offer); }
+    else if(signal.type==='answer'){ peers[signal.from].setRemoteDescription(new RTCSessionDescription(signal.answer)); }
+    else if(signal.type==='ice'){ peers[signal.from].addIceCandidate(new RTCIceCandidate(signal.ice)); }
   });
 }
-
 </script>
 </body>
 </html>
