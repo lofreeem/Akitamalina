@@ -2,86 +2,117 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>P2P Chat</title>
+<title>Wave P2P Chat</title>
 <style>
 body { font-family: monospace; background:#111; color:#0f0; display:flex; flex-direction:column; align-items:center; padding:20px;}
-textarea, input { width:400px; margin:5px 0; font-family: monospace;}
 #messages { width:400px; height:200px; overflow-y:auto; border:1px solid #0f0; padding:5px; margin-bottom:10px;}
+input { width:400px; margin-bottom:10px; }
+button { margin:2px; }
 </style>
 </head>
 <body>
-<h2>P2P Chat без сервера</h2>
+<h2>Авто P2P Chat</h2>
 <div id="messages"></div>
-<input id="input" placeholder="Введите сообщение и нажмите Enter">
-<button onclick="createOffer()">Создать Offer</button>
-<textarea id="offer" placeholder="Offer / Answer" rows="5"></textarea>
-<button onclick="acceptOffer()">Принять Offer</button>
-<button onclick="acceptAnswer()">Принять Answer</button>
+<input id="input" placeholder="Введите сообщение и Enter">
+<button onclick="start()">Начать комнату</button>
 
 <script>
-let pc;
-let channel;
-let remoteId = "peer";
-
 const messages = document.getElementById("messages");
 const input = document.getElementById("input");
-const offerTextarea = document.getElementById("offer");
+
+let peers = {};        // {peerId: RTCPeerConnection}
+let channels = {};     // {peerId: DataChannel}
+let uid = Math.random().toString(36).substr(2,6);
+
+// Псевдо-публичное хранилище через localStorage (для примера)
+let roomKey = 'waveRoom';
+let signals = JSON.parse(localStorage.getItem(roomKey)||'{}');
 
 function log(msg){
   const d=document.createElement("div"); d.textContent=msg; messages.appendChild(d);
   messages.scrollTop = messages.scrollHeight;
 }
 
-/* ===== Создаем offer ===== */
-function createOffer(){
-  pc = new RTCPeerConnection();
-  channel = pc.createDataChannel("chat");
-  setupChannel();
-  pc.onicecandidate = e=>{ if(e.candidate) console.log("ICE candidate:", JSON.stringify(e.candidate)); };
-  pc.createOffer().then(offer=>{
-    pc.setLocalDescription(offer);
-    offerTextarea.value = JSON.stringify(offer);
-    log("Offer создан! Скопируйте и отправьте другому игроку.");
-  });
+// ===== Инициализация комнаты =====
+function start(){
+  log("Комната запущена. Ждите новых игроков...");
+  window.addEventListener("storage", receiveSignal); // слушаем новые сигналы
+  broadcastSignal({type:'hello', from:uid});
 }
 
-/* ===== Принимаем offer ===== */
-function acceptOffer(){
-  const offer = JSON.parse(offerTextarea.value);
-  pc = new RTCPeerConnection();
-  pc.ondatachannel = ev=>{ channel = ev.channel; setupChannel(); };
-  pc.onicecandidate = e=>{ if(e.candidate) console.log("ICE candidate:", JSON.stringify(e.candidate)); };
-  pc.setRemoteDescription(new RTCSessionDescription(offer)).then(()=>{
-    pc.createAnswer().then(answer=>{
-      pc.setLocalDescription(answer);
-      offerTextarea.value = JSON.stringify(answer);
-      log("Answer создан! Отправьте обратно создателю offer.");
+// ===== WebRTC peer connection =====
+function createPeer(remoteId, offer){
+  const pc = new RTCPeerConnection();
+  peers[remoteId]=pc;
+
+  const channel = pc.createDataChannel("wave");
+  setupChannel(remoteId, channel);
+
+  pc.onicecandidate = e=>{
+    if(e.candidate) broadcastSignal({type:'ice', from:uid, to:remoteId, ice:e.candidate});
+  };
+
+  if(offer){
+    pc.setRemoteDescription(new RTCSessionDescription(offer)).then(()=>{
+      pc.createAnswer().then(answer=>{
+        pc.setLocalDescription(answer);
+        broadcastSignal({type:'answer', from:uid, to:remoteId, answer});
+      });
     });
-  });
+  } else {
+    pc.createOffer().then(o=>{
+      pc.setLocalDescription(o);
+      broadcastSignal({type:'offer', from:uid, to:remoteId, offer:o});
+    });
+  }
 }
 
-/* ===== Принимаем answer ===== */
-function acceptAnswer(){
-  const answer = JSON.parse(offerTextarea.value);
-  pc.setRemoteDescription(new RTCSessionDescription(answer));
-  log("Соединение установлено!");
+// ===== Настройка канала =====
+function setupChannel(pid, channel){
+  channels[pid]=channel;
+  channel.onopen = ()=>log("Канал открыт с "+pid);
+  channel.onmessage = e=>log(pid+": "+e.data);
 }
 
-/* ===== Настройка канала ===== */
-function setupChannel(){
-  channel.onopen = ()=>log("Канал открыт!");
-  channel.onmessage = e=>log("Peer: "+e.data);
-}
-
-/* ===== Отправка сообщений ===== */
+// ===== Отправка сообщений =====
 input.addEventListener("keydown", e=>{
   if(e.key==="Enter" && input.value.trim()!==""){
-    const msg = input.value.trim();
-    channel.send(msg);
+    const msg=input.value.trim();
+    Object.values(channels).forEach(ch=>{
+      if(ch.readyState==="open") ch.send(msg);
+    });
     log("Me: "+msg);
     input.value="";
   }
 });
+
+// ===== «Волновая» отправка сигналов через localStorage =====
+function broadcastSignal(obj){
+  signals[Date.now()+'_'+Math.random()]=obj;
+  localStorage.setItem(roomKey, JSON.stringify(signals));
+  // сами же обработаем сразу
+  receiveSignal({newValue: JSON.stringify(signals)});
+}
+
+// ===== Обработка сигналов =====
+function receiveSignal(e){
+  if(!e.newValue) return;
+  const allSignals = JSON.parse(e.newValue);
+  Object.values(allSignals).forEach(signal=>{
+    if(signal.from===uid) return; // игнорируем свои
+    if(signal.to && signal.to!==uid) return; // не для нас
+    if(signal.type==='hello'){
+      if(!peers[signal.from]) createPeer(signal.from);
+    } else if(signal.type==='offer'){
+      if(!peers[signal.from]) createPeer(signal.from, signal.offer);
+    } else if(signal.type==='answer'){
+      peers[signal.from].setRemoteDescription(new RTCSessionDescription(signal.answer));
+    } else if(signal.type==='ice'){
+      peers[signal.from].addIceCandidate(new RTCIceCandidate(signal.ice));
+    }
+  });
+}
+
 </script>
 </body>
 </html>
