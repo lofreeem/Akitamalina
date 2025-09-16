@@ -1,884 +1,204 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Offline 3D Procedural Metaverse</title>
-    <style>
-        :root {
-            --hud-bg-color: rgba(10, 20, 40, 0.75);
-            --hud-text-color: #e0e0e0;
-            --hud-accent-color: #00ffff;
-            --hud-border-color: rgba(0, 255, 255, 0.5);
-        }
-        body {
-            margin: 0;
-            overflow: hidden;
-            background-color: #000;
-            font-family: 'Consolas', 'Menlo', 'monospace';
-            color: var(--hud-text-color);
-        }
-        #glcanvas {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            cursor: pointer;
-        }
-        #hud {
-            position: fixed;
-            top: 0;
-            left: 0;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            backdrop-filter: blur(5px);
-            background-color: var(--hud-bg-color);
-            border-right: 1px solid var(--hud-border-color);
-            border-bottom: 1px solid var(--hud-border-color);
-            border-bottom-right-radius: 8px;
-            max-width: 300px;
-            user-select: none;
-        }
-        .hud-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-        .hud-group h2 {
-            margin: 0;
-            font-size: 1.1rem;
-            color: var(--hud-accent-color);
-            border-bottom: 1px solid var(--hud-border-color);
-            padding-bottom: 0.25rem;
-        }
-        .hud-button, select, .hud-label {
-            background: rgba(0, 255, 255, 0.1);
-            border: 1px solid var(--hud-border-color);
-            color: var(--hud-text-color);
-            padding: 0.5rem;
-            cursor: pointer;
-            text-align: left;
-            border-radius: 4px;
-            font-family: inherit;
-        }
-        .hud-button:not(:disabled):hover, select:hover {
-            background: rgba(0, 255, 255, 0.3);
-        }
-        .hud-button:disabled {
-            cursor: not-allowed;
-            background: rgba(128, 128, 128, 0.2);
-            border-color: rgba(128, 128, 128, 0.5);
-            color: #aaa;
-        }
-        .hud-label {
-            cursor: default;
-        }
-        .hud-label:hover {
-            background: rgba(0, 255, 255, 0.1);
-        }
-        #fps-display {
-            position: fixed;
-            bottom: 1rem;
-            right: 1rem;
-            padding: 0.5rem 1rem;
-            background-color: var(--hud-bg-color);
-            border: 1px solid var(--hud-border-color);
-            border-radius: 4px;
-        }
-        #readme {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 80%;
-            max-width: 800px;
-            height: 80%;
-            max-height: 80vh;
-            background-color: rgba(10, 20, 40, 0.95);
-            border: 1px solid var(--hud-accent-color);
-            border-radius: 8px;
-            padding: 2rem;
-            overflow-y: auto;
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity 0.3s, visibility 0.3s;
-            z-index: 100;
-        }
-        #readme.visible {
-            visibility: visible;
-            opacity: 1;
-        }
-        #readme h1, #readme h2 { color: var(--hud-accent-color); }
-        #readme pre { 
-            background: rgba(0,0,0,0.5); 
-            padding: 1rem; 
-            border-radius: 4px; 
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        #readme code { font-family: 'Consolas', 'Menlo', 'monospace'; }
-        #readme button { position: absolute; top: 1rem; right: 1rem; }
-        #lore-display {
-            height: 120px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            cursor: default;
-            background: rgba(0, 255, 255, 0.05);
-            font-size: 0.9rem;
-        }
-        #start-prompt {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            text-align: center;
-            z-index: 200;
-            cursor: pointer;
-            transition: opacity 0.5s, visibility 0.5s;
-            font-family: 'Consolas', 'Menlo', 'monospace';
-        }
-        #start-prompt.hidden {
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-        }
-        #start-prompt h1 {
-            font-size: 3rem;
-            color: var(--hud-accent-color);
-            text-shadow: 0 0 10px var(--hud-accent-color);
-            margin-bottom: 1rem;
-        }
-        #start-prompt p {
-            font-size: 1.5rem;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Mini Metaverse P2P</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+    #chat {
+      position: absolute; right: 0; top: 0; width: 250px; height: 100%;
+      background: rgba(0,0,0,0.6); color: #0f0; padding: 5px; display: flex; flex-direction: column;
+    }
+    #messages { flex: 1; overflow-y: auto; }
+    #input { border: none; padding: 5px; font-size: 14px; }
+  </style>
 </head>
 <body>
-    <div id="start-prompt">
-        <h1>Procedural Metaverse</h1>
-        <p>Click to Begin Exploration</p>
-    </div>
-    <canvas id="glcanvas"></canvas>
-
-    <div id="hud">
-        <div class="hud-group">
-            <h2>Metaverse Control</h2>
-            <button id="readme-toggle">Toggle README</button>
-        </div>
-        <div class="hud-group">
-            <h2>Render Quality</h2>
-            <select id="quality-select">
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-            </select>
-            <button id="auto-quality-toggle">Auto-Quality: ON</button>
-        </div>
-        <div class="hud-group">
-            <h2>Player State</h2>
-            <div id="player-state-stats" class="hud-label">
-                State: Walking
-            </div>
-        </div>
-        <div class="hud-group">
-            <h2>Environment</h2>
-            <div id="env-stats" class="hud-label">
-                Time: Day<br>
-                Pos: 0.0, 0.0, 0.0
-            </div>
-        </div>
-        <div class="hud-group">
-            <h2>World Lore</h2>
-            <button id="analyze-surroundings" class="hud-button">Analyze Surroundings</button>
-            <div id="lore-display" class="hud-label">Click 'Analyze' to generate a story about this place.</div>
-        </div>
-    </div>
-
-    <div id="fps-display">FPS: 0</div>
-
-    <div id="readme">
-        <button id="readme-close">Close [ESC]</button>
-        <h1>README: Procedural Metaverse</h1>
-        <p>This is a self-contained, offline 3D world generated procedurally using WebGL and raymarching. This file contains all the code required to generate and explore an endless, naturalistic landscape.</p>
-        
-        <h2>Core Features</h2>
-        <ul>
-            <li><b>Endless World:</b> The environment is generated using noise functions to create a seamless, endless world of rolling hills and forests.</li>
-            <li><b>Dynamic Day/Night Cycle:</b> The world features a full day/night cycle that affects lighting and sky color, with a visible sun.</li>
-            <li><b>Procedural Lore:</b> Use the "Analyze Surroundings" feature to generate unique, location-based log entries.</li>
-            <li><b>Dynamic Quality:</b> The engine automatically adjusts render quality to maintain a smooth framerate. You can also set it manually.</li>
-            <li><b>Persistent State:</b> Your quality settings are saved in your browser.</li>
-        </ul>
-
-        <h2>Controls</h2>
-        <ul>
-            <li><b>W, S:</b> Move Forward / Backward</li>
-            <li><b>A, D:</b> Strafe Left / Right</li>
-            <li><b>Q, E:</b> Move Down / Up</li>
-            <li><b>Shift:</b> Sprint (while moving forward)</li>
-            <li><b>Control:</b> Crouch</li>
-            <li><b>Mouse:</b> Look Around (Click to lock cursor)</li>
-            <li><b>ESC:</b> Unlock cursor / Close this README</li>
-        </ul>
-    </div>
-
-    <!-- Vertex Shader: A simple pass-through for a full-screen quad -->
-    <script id="vertex-shader" type="x-shader/x-vertex">
-        attribute vec2 a_position;
-        void main() {
-            gl_Position = vec4(a_position, 0.0, 1.0);
-        }
-    </script>
-
-    <!-- Fragment Shader: The heart of the renderer -->
-    <script id="fragment-shader" type="x-shader/x-fragment">
-        precision highp float;
-
-        uniform vec2 u_resolution;
-        uniform float u_time;
-        uniform vec3 u_camPos;
-        uniform mat3 u_camMat;
-
-        // --- World Uniforms ---
-        uniform int u_maxSteps;
-        uniform int u_aoSamples;
-        uniform int u_qualityLevel;
-
-        // --- Dynamic Environment ---
-        uniform vec3 u_sunDir;
-
-        // --- Constants ---
-        const float MAX_DIST = 150.0;
-        const float SURF_DIST = 0.005;
-        const int MAX_STEPS_SUPPORTED = 150;
-        const int MAX_AO_SAMPLES_SUPPORTED = 8;
-
-        // --- UTILITY / NOISE FUNCTIONS ---
-
-        // Pseudo-random generator
-        float rand(vec2 n) { 
-            return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
-        }
-
-        // 2D Noise function
-        float noise(vec2 p) {
-            vec2 ip = floor(p);
-            vec2 u = fract(p);
-            u = u*u*(3.0-2.0*u); // Smoothstep
-            
-            float res = mix(
-                mix(rand(ip), rand(ip + vec2(1.0, 0.0)), u.x),
-                mix(rand(ip + vec2(0.0, 1.0)), rand(ip + vec2(1.0, 1.0)), u.x),
-                u.y);
-            return res;
-        }
-
-        // Fractional Brownian Motion for terrain
-        float fbm(vec2 p) {
-            float f = 0.0;
-            float a = 0.5;
-            mat2 m = mat2(1.6, 1.2, -1.2, 1.6); // Rotation matrix to break up grid artifacts
-            for (int i = 0; i < 6; i++) {
-                f += a * noise(p);
-                p = m * p * 2.0;
-                a *= 0.5;
-            }
-            return f;
-        }
-
-        // --- SDFs (Signed Distance Functions) ---
-
-        float sdSphere(vec3 p, float s) { return length(p) - s; }
-        float sdCylinder(vec3 p, float h, float r) {
-            vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r,h);
-            return min(max(d.x,d.y),0.0) + length(max(d,0.0));
-        }
-
-        // Tree SDF - combines a cylinder trunk and sphere canopy
-        // Returns vec2(distance, material_id)
-        vec2 sdfTree(vec3 p) {
-            float trunk = sdCylinder(p - vec3(0.0, 1.5, 0.0), 1.5, 0.25);
-            float canopy = sdSphere(p - vec3(0.0, 3.5, 0.0), 1.5);
-            if (trunk < canopy) return vec2(trunk, 2.0); // Mat ID 2.0 for trunk
-            return vec2(canopy, 3.0); // Mat ID 3.0 for canopy
-        }
-
-        // Terrain SDF
-        float sdfTerrain(vec3 p) {
-             return p.y - 8.0 * fbm(p.xz * 0.05);
-        }
-        
-        // World Map Function - combines all SDFs and returns distance and material ID
-        vec2 map(vec3 p) {
-            float terrainDE = sdfTerrain(p);
-            vec2 res = vec2(terrainDE, 1.0); // Mat ID 1.0 for terrain
-
-            // Place trees on a grid
-            vec2 grid = floor(p.xz / 10.0);
-            if (rand(grid) > 0.6) { // 40% chance of a tree in a grid cell
-                vec3 treeP = p;
-                // Center tree in cell and add random offset
-                treeP.xz = mod(p.xz, 10.0) - 5.0 - vec2(rand(grid+0.1)-0.5, rand(grid+0.2)-0.5) * 4.0; 
-                vec2 tree = sdfTree(treeP);
-                if (tree.x < res.x) {
-                    res = tree;
-                }
-            }
-            
-            return res;
-        }
-
-        // Calculate normal using gradient of the SDF
-        vec3 calcNormal(vec3 p) {
-            vec2 e = vec2(0.002, 0.0);
-            return normalize(vec3(
-                map(p + e.xyy).x - map(p - e.xyy).x,
-                map(p + e.yxy).x - map(p - e.yxy).x,
-                map(p + e.yyx).x - map(p - e.yyx).x
-            ));
-        }
-
-        // Raymarching algorithm
-        vec2 rayMarch(vec3 ro, vec3 rd) {
-            float d = 0.0;
-            float matID = -1.0;
-            for (int i = 0; i < MAX_STEPS_SUPPORTED; i++) {
-                if (i >= u_maxSteps) break;
-                vec3 p = ro + rd * d;
-                vec2 res = map(p);
-                // Use a dynamic step size to avoid stepping through thin surfaces
-                float h = max(0.01, 0.2 * res.x); 
-                d += h;
-                matID = res.y;
-                if (res.x < SURF_DIST || d > MAX_DIST) break;
-            }
-            return vec2(d, matID);
-        }
-
-        // Ambient Occlusion approximation
-        float calcAO(vec3 p, vec3 n) {
-            float occ = 0.0;
-            float sca = 1.0;
-            for(int i=0; i < MAX_AO_SAMPLES_SUPPORTED; i++) {
-                if (i >= u_aoSamples) break;
-                float h = 0.01 + 0.15 * float(i);
-                float d = map(p + h*n).x;
-                occ += (h-d)*sca;
-                sca *= 0.95;
-            }
-            return clamp(1.0 - 2.5*occ, 0.0, 1.0);
-        }
-
-        // Renders a sky with atmospheric scattering, dynamic clouds, sun, and stars.
-        vec3 getSkyColor(vec3 rd, vec3 sunDir, float time) {
-            // --- Atmospheric Scattering Approximation ---
-            float sunDot = max(0.0, dot(rd, sunDir));
-            float sunElevation = max(0.0, sunDir.y);
-            float horizonFactor = 1.0 - max(0.0, rd.y);
-
-            // Rayleigh scattering (blue sky)
-            vec3 rayleighColor = vec3(0.25, 0.45, 0.8);
-            float rayleigh = 1.0 + pow(1.0 - sunDot, 2.0) * 1.5;
-            vec3 sky = rayleighColor * rayleigh;
-            
-            // Mie scattering (sun haze)
-            vec3 mieColor = vec3(1.0, 0.9, 0.7);
-            float mie = pow(sunDot, 32.0) * 0.8 + pow(sunDot, 256.0) * 0.2;
-            sky += mie * mieColor;
-
-            // Horizon color for sunset/sunrise
-            vec3 horizonColor = vec3(1.0, 0.5, 0.15);
-            sky = mix(sky, horizonColor, pow(horizonFactor, 2.0) * pow(1.0-sunElevation, 3.0));
-            
-            // Mix with night sky
-            vec3 nightSkyColor = vec3(0.01, 0.02, 0.04);
-            sky = mix(nightSkyColor, sky, sunElevation * 1.2);
-            
-            // --- Dynamic Clouds ---
-            if (u_qualityLevel > 0 && sunElevation > 0.01) { // 0=low, 1=med, 2=high. Skip clouds on low.
-                // Project ray direction for 2D noise lookup, animate with time
-                vec2 cloudUV = rd.xz / (rd.y * 0.5 + 0.5);
-                cloudUV += time * 0.02;
-                
-                // Use fbm for cloud shape
-                float cloudMap = fbm(cloudUV * 0.3);
-                
-                // Shape the clouds to have defined edges
-                float cloudCoverage = smoothstep(0.5, 0.6, cloudMap);
-                
-                if (cloudCoverage > 0.0) {
-                    // Cloud lighting
-                    vec3 cloudBaseColor = vec3(1.0);
-                    vec3 cloudShadowColor = vec3(0.7, 0.75, 0.8);
-
-                    // Light clouds based on sun direction
-                    vec3 cloudLight = mix(cloudShadowColor, cloudBaseColor, pow(sunDot, 2.0));
-                    
-                    // Thinner clouds near the sun (forward scattering)
-                    float scatter = pow(sunDot, 8.0);
-                    cloudLight = mix(cloudLight, horizonColor, scatter * 0.5);
-                    
-                    // Blend clouds with sky
-                    sky = mix(sky, cloudLight, cloudCoverage * 0.8);
-                }
-            }
-
-            // --- Sun Disk ---
-            if (sunDir.y > 0.0) {
-                vec3 sunColor = vec3(1.0, 0.95, 0.85) * 1.5;
-                float sunDisk = pow(sunDot, 1024.0);
-                sky = mix(sky, sunColor, sunDisk);
-            }
-
-            // --- Stars ---
-            if (sunElevation < 0.1) {
-                // Use ray direction for star mapping to avoid screen-space feel
-                float starIntensity = pow(fbm(rd.xy * 300.0), 15.0);
-                sky += vec3(starIntensity) * (1.0 - sunElevation * 10.0);
-            }
-            
-            return clamp(sky, 0.0, 1.0);
-        }
-        
-        void main() {
-            vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / u_resolution.y;
-            
-            vec3 ro = u_camPos;
-            vec3 rd = u_camMat * normalize(vec3(uv, 1.5)); // 1.5 is FOV
-
-            vec3 sky = getSkyColor(rd, u_sunDir, u_time);
-
-            vec2 res = rayMarch(ro, rd);
-            float d = res.x;
-            float matID = res.y;
-
-            vec3 col = sky;
-
-            if (d < MAX_DIST) {
-                vec3 p = ro + rd * d;
-                vec3 n = calcNormal(p);
-                vec3 l = u_sunDir;
-                vec3 v = -rd;
-                vec3 r = reflect(-l, n);
-                float ao = calcAO(p, n);
-                float diff = max(dot(n, l), 0.0);
-                float spec = pow(max(dot(r, v), 0.0), 32.0);
-                
-                vec3 baseColor;
-                if (matID == 1.0) { // Terrain
-                     baseColor = mix(vec3(0.3, 0.2, 0.1), vec3(0.1, 0.5, 0.2), smoothstep(0.5, 0.8, n.y));
-                } else if (matID == 2.0) { // Trunk
-                     baseColor = vec3(0.4, 0.25, 0.1);
-                } else { // Canopy
-                     baseColor = vec3(0.0, 0.4, 0.1);
-                }
-
-                vec3 sunLight = vec3(1.0, 0.9, 0.8);
-                vec3 ambientLight = vec3(0.4, 0.5, 0.6);
-
-                col = (ambientLight * sky + diff * sunLight) * baseColor * ao + spec * sunLight;
-            }
-
-            // Fog
-            col = mix(col, sky, 1.0 - exp(-0.005 * d * d));
-            
-            gl_FragColor = vec4(col, 1.0);
-        }
-    </script>
-
-    <!-- Main Application Logic -->
-    <script type="module">
-        const canvas = document.getElementById('glcanvas');
-        
-        let gl;
-        try {
-            gl = canvas.getContext('webgl2', { antialiasing: false });
-        } catch (e) { console.warn("WebGL2 not supported, falling back to WebGL1."); }
-        if (!gl) {
-            gl = canvas.getContext('webgl', { antialiasing: false }) || canvas.getContext('experimental-webgl', { antialiasing: false });
-        }
-        if (!gl) {
-            alert('Your browser does not support WebGL.');
-            throw new Error('WebGL not supported');
-        }
-        
-        const worldConfig = {
-            quality: {
-                low:    { maxSteps: 40,  aoSamples: 2 },
-                medium: { maxSteps: 80,  aoSamples: 4 },
-                high:   { maxSteps: 140, aoSamples: 8 },
-            }
-        };
-
-        // --- State Management ---
-        const camera = { pos: [0, 5, -5], yaw: Math.PI, pitch: -0.2 };
-        const input = { keys: new Set(), mouseDeltaX: 0, mouseDeltaY: 0 };
-        const state = {
-            quality: 'low',
-            autoQuality: true,
-            frameTimes: [],
-            lastQualityCheck: 0,
-            player: {
-                status: 'Walking',
-                crouchOffset: 0.0,
-            },
-            world: {
-                timeOfDay: 0.25, // 0 to 1, start in morning
-            },
-        };
-
-        // --- WebGL Setup ---
-        function createShader(gl, type, source) {
-            const shader = gl.createShader(type);
-            gl.shaderSource(shader, source);
-            gl.compileShader(shader);
-            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-                console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
-                gl.deleteShader(shader);
-                return null;
-            }
-            return shader;
-        }
-
-        const vertexShader = createShader(gl, gl.VERTEX_SHADER, document.getElementById('vertex-shader').text);
-        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, document.getElementById('fragment-shader').text);
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program));
-        }
-
-        const programInfo = {
-            program,
-            attribLocations: { position: gl.getAttribLocation(program, 'a_position'), },
-            uniformLocations: {
-                resolution: gl.getUniformLocation(program, 'u_resolution'),
-                time: gl.getUniformLocation(program, 'u_time'),
-                camPos: gl.getUniformLocation(program, 'u_camPos'),
-                camMat: gl.getUniformLocation(program, 'u_camMat'),
-                sunDir: gl.getUniformLocation(program, 'u_sunDir'),
-                maxSteps: gl.getUniformLocation(program, 'u_maxSteps'),
-                aoSamples: gl.getUniformLocation(program, 'u_aoSamples'),
-                qualityLevel: gl.getUniformLocation(program, 'u_qualityLevel'),
-            },
-        };
-
-        const positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
-        // --- UI & Event Listeners ---
-        const qualitySelect = document.getElementById('quality-select');
-        const autoQualityToggle = document.getElementById('auto-quality-toggle');
-        const readmeToggle = document.getElementById('readme-toggle');
-        const readmeClose = document.getElementById('readme-close');
-        const readmeEl = document.getElementById('readme');
-        const analyzeButton = document.getElementById('analyze-surroundings');
-        const loreDisplay = document.getElementById('lore-display');
-        const startPrompt = document.getElementById('start-prompt');
-        
-        function toggleReadme() { readmeEl.classList.toggle('visible'); if (readmeEl.classList.contains('visible')) document.exitPointerLock(); }
-
-        readmeToggle.addEventListener('click', toggleReadme);
-        readmeClose.addEventListener('click', toggleReadme);
-        
-        function loadSettings() {
-            const savedQuality = localStorage.getItem('metaverse_quality');
-            if (savedQuality) state.quality = savedQuality;
-            qualitySelect.value = state.quality;
-        }
-
-        function saveSettings() {
-            localStorage.setItem('metaverse_quality', state.quality);
-        }
-
-        qualitySelect.addEventListener('change', () => { state.quality = qualitySelect.value; saveSettings(); });
-        autoQualityToggle.addEventListener('click', () => {
-            state.autoQuality = !state.autoQuality;
-            autoQualityToggle.textContent = `Auto-Quality: ${state.autoQuality ? 'ON' : 'OFF'}`;
-        });
-
-        window.addEventListener('keydown', (e) => { 
-            input.keys.add(e.code); 
-            if (e.code === 'Escape') {
-                document.exitPointerLock();
-                if(readmeEl.classList.contains('visible')) toggleReadme();
-            }
-        });
-        window.addEventListener('keyup', (e) => input.keys.delete(e.code));
-        
-        function requestLockAndStart() {
-            if (document.pointerLockElement !== canvas) {
-                canvas.requestPointerLock();
-            }
-            if (startPrompt && !startPrompt.classList.contains('hidden')) {
-                startPrompt.classList.add('hidden');
-            }
-        }
-        canvas.addEventListener('click', requestLockAndStart);
-        if (startPrompt) {
-            startPrompt.addEventListener('click', requestLockAndStart);
-        }
-
-        document.addEventListener('pointerlockchange', () => {
-            if (document.pointerLockElement === canvas) {
-                document.addEventListener('mousemove', updateMouse, false);
-            } else {
-                document.removeEventListener('mousemove', updateMouse, false);
-            }
-        });
-
-        function updateMouse(e) {
-            input.mouseDeltaX += e.movementX;
-            input.mouseDeltaY += e.movementY;
-        }
-        
-        analyzeButton.addEventListener('click', analyzeSurroundings);
-
-        // --- Procedural Lore Generation ---
-        function analyzeSurroundings() {
-            analyzeButton.disabled = true;
-            loreDisplay.textContent = "Analyzing local data patterns...";
-
-            // Use a timeout to simulate analysis time
-            setTimeout(() => {
-                const pos = camera.pos;
-                const timeString = getCurrentTimeString();
-
-                // Simple pseudo-random number generator based on position
-                const pseudoRand = (seed) => {
-                    let t = seed + 0.12345;
-                    t = Math.sin(t * 12.9898) * 43758.5453;
-                    return t - Math.floor(t);
-                };
-                
-                const seed = Math.floor(pos[0]) + Math.floor(pos[2]) * 1000;
-                const r1 = pseudoRand(seed);
-                const r2 = pseudoRand(seed + 1.23);
-                const r3 = pseudoRand(seed - 4.56);
-
-                const intros = [
-                    "Log entry... Anomaly detected.",
-                    "Field notes:",
-                    "System scan complete.",
-                    "Observations:",
-                    "Memory fragment recovered."
-                ];
-                const middles = [
-                    "The fractal landscape here exhibits a peculiar resonance.",
-                    "Energy readings are stable, yet the silence is profound.",
-                    "The light of the virtual sun casts long, distorted shadows.",
-                    "A sense of ancient digital history permeates this location.",
-                    "The algorithmic flora shows unusual growth patterns.",
-                    "There's a strange hum in the substrate, barely perceptible."
-                ];
-                const conclusions = [
-                    `It is currently ${timeString.toLowerCase()}.`,
-                    "The purpose of this simulation remains elusive.",
-                    "I continue my exploration.",
-                    "No other entities detected.",
-                    "The isolation is absolute."
-                ];
-
-                const intro = intros[Math.floor(r1 * intros.length)];
-                const middle = middles[Math.floor(r2 * middles.length)];
-                const conclusion = conclusions[Math.floor(r3 * conclusions.length)];
-                
-                const generatedLore = `${intro} ${middle} ${conclusion}`;
-                
-                loreDisplay.textContent = generatedLore;
-                analyzeButton.disabled = false;
-            }, 500); // 0.5 second delay
-        }
-
-        // --- Core Logic ---
-        function updatePlayerStateAndSpeed(deltaTime) {
-            const isCrouching = input.keys.has('ControlLeft') || input.keys.has('ControlRight');
-            const isSprinting = (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight')) && input.keys.has('KeyW') && !isCrouching;
-
-            let speedMultiplier = 1.0;
-            let playerStatus = 'Walking';
-
-            if (isCrouching) {
-                speedMultiplier = 0.5;
-                playerStatus = 'Crouching';
-            } else if (isSprinting) {
-                speedMultiplier = 2.0;
-                playerStatus = 'Sprinting';
-            }
-            state.player.status = playerStatus;
-
-            const crouchDepth = -0.5;
-            const targetOffset = isCrouching ? crouchDepth : 0.0;
-            const crouchLerpSpeed = 7.0 * deltaTime;
-            const oldOffset = state.player.crouchOffset;
-            
-            state.player.crouchOffset += (targetOffset - oldOffset) * Math.min(crouchLerpSpeed, 1.0);
-            
-            camera.pos[1] += state.player.crouchOffset - oldOffset;
-            
-            return speedMultiplier;
-        }
-
-        function updateCamera(deltaTime) {
-            // --- Mouse Look ---
-            const lookSpeed = 0.002;
-            camera.yaw -= input.mouseDeltaX * lookSpeed;
-            camera.pitch -= input.mouseDeltaY * lookSpeed;
-            camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch));
-            input.mouseDeltaX = 0;
-            input.mouseDeltaY = 0;
-
-            // --- Keyboard Movement ---
-            const speedMultiplier = updatePlayerStateAndSpeed(deltaTime);
-            const moveSpeed = 5.0 * speedMultiplier * deltaTime;
-
-            const forwardInput = (input.keys.has('KeyW') ? 1 : 0) - (input.keys.has('KeyS') ? 1 : 0);
-            const rightInput = (input.keys.has('KeyD') ? 1 : 0) - (input.keys.has('KeyA') ? 1 : 0);
-            const upInput = (input.keys.has('KeyE') ? 1 : 0) - (input.keys.has('KeyQ') ? 1 : 0);
-            
-            // Exit early if no input
-            if (forwardInput === 0 && rightInput === 0 && upInput === 0) {
-                return;
-            }
-
-            const sinYaw = Math.sin(camera.yaw);
-            const cosYaw = Math.cos(camera.yaw);
-
-            // Calculate horizontal movement vector
-            let moveX = (forwardInput * sinYaw) + (rightInput * cosYaw);
-            let moveZ = (forwardInput * cosYaw) - (rightInput * sinYaw);
-
-            // Normalize horizontal vector to prevent faster diagonal movement
-            const horizontalLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
-            if (horizontalLen > 0.001) {
-                const invLen = 1.0 / horizontalLen;
-                camera.pos[0] += moveX * invLen * moveSpeed;
-                camera.pos[2] += moveZ * invLen * moveSpeed;
-            }
-            
-            // Apply vertical movement separately
-            camera.pos[1] += upInput * moveSpeed;
-        }
-        
-        function updateEnvironment(deltaTime) {
-            const timeSpeed = 0.02;
-            state.world.timeOfDay = (state.world.timeOfDay + deltaTime * timeSpeed) % 1.0;
-        }
-
-        function updateQuality(deltaTime, time) {
-            state.frameTimes.push(deltaTime);
-            if (state.frameTimes.length > 60) state.frameTimes.shift();
-
-            if (state.autoQuality && time - state.lastQualityCheck > 1000) {
-                const avgMs = (state.frameTimes.reduce((a, b) => a + b, 0) / state.frameTimes.length) * 1000;
-                const qualityLevels = ['low', 'medium', 'high'];
-                let currentIdx = qualityLevels.indexOf(state.quality);
-                
-                if (avgMs > 25 && currentIdx > 0) { // Slower than ~40fps
-                    state.quality = qualityLevels[currentIdx - 1];
-                    qualitySelect.value = state.quality;
-                } else if (avgMs < 15 && currentIdx < qualityLevels.length - 1) { // Faster than ~66fps
-                    state.quality = qualityLevels[currentIdx + 1];
-                    qualitySelect.value = state.quality;
-                }
-                state.lastQualityCheck = time;
-            }
-        }
-        
-        function normalize(v) {
-            const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-            if (len > 0.00001) {
-                return [v[0] / len, v[1] / len, v[2] / len];
-            }
-            return [0, 0, 0];
-        }
-        
-        function getCurrentTimeString() {
-            const time = state.world.timeOfDay;
-            if (time > 0.1 && time < 0.4) return "Day";
-            if (time >= 0.4 && time < 0.6) return "Sunset";
-            if (time >= 0.0 && time < 0.1) return "Sunrise";
-            return "Night";
-        }
-
-        // --- Render Loop ---
-        let lastTime = 0;
-        function render(time) {
-            time *= 0.001;
-            const deltaTime = time - lastTime;
-            lastTime = time;
-
-            updateCamera(deltaTime);
-            updateEnvironment(deltaTime);
-            updateQuality(deltaTime, time);
-
-            const dpr = window.devicePixelRatio || 1;
-            const displayWidth = Math.round(canvas.clientWidth * dpr);
-            const displayHeight = Math.round(canvas.clientHeight * dpr);
-            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-                canvas.width = displayWidth;
-                canvas.height = displayHeight;
-                gl.viewport(0, 0, canvas.width, canvas.height);
-            }
-            
-            gl.clearColor(0, 0, 0, 1);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-            gl.useProgram(programInfo.program);
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.vertexAttribPointer(programInfo.attribLocations.position, 2, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(programInfo.attribLocations.position);
-
-            const qualitySettings = worldConfig.quality[state.quality];
-            const camMat = (function() {
-                const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw);
-                const cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
-                return [cy, 0, -sy, sp * sy, cp, sp * cy, cp * sy, -sp, cp * cy];
-            })();
-            const sunAngle = state.world.timeOfDay * 2.0 * Math.PI;
-            const sunDir = normalize([Math.sin(sunAngle), Math.cos(sunAngle) * 0.8, Math.cos(sunAngle) * -0.2]);
-            
-            const qualityLevels = ['low', 'medium', 'high'];
-            const qualityLevel = qualityLevels.indexOf(state.quality);
-
-            gl.uniform2f(programInfo.uniformLocations.resolution, canvas.width, canvas.height);
-            gl.uniform1f(programInfo.uniformLocations.time, time);
-            gl.uniform3fv(programInfo.uniformLocations.camPos, camera.pos);
-            gl.uniformMatrix3fv(programInfo.uniformLocations.camMat, false, camMat);
-            gl.uniform3fv(programInfo.uniformLocations.sunDir, sunDir);
-            
-            gl.uniform1i(programInfo.uniformLocations.maxSteps, qualitySettings.maxSteps);
-            gl.uniform1i(programInfo.uniformLocations.aoSamples, qualitySettings.aoSamples);
-            gl.uniform1i(programInfo.uniformLocations.qualityLevel, qualityLevel);
-
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-            // Update HUD
-            const fps = 1 / deltaTime;
-
-            document.getElementById('fps-display').textContent = `FPS: ${fps.toFixed(0)}`;
-            document.getElementById('player-state-stats').innerHTML = `State: ${state.player.status}`;
-            document.getElementById('env-stats').innerHTML = `Time: ${getCurrentTimeString()}<br>Pos: ${camera.pos.map(p=>p.toFixed(1)).join(', ')}`;
-
-            requestAnimationFrame(render);
-        }
-        
-        loadSettings();
-        requestAnimationFrame(render);
-    </script>
+<div id="chat">
+  <div id="messages"></div>
+  <input id="input" placeholder="Type message..."/>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+/* === 1. СЦЕНА === */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101020);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(500,500),
+  new THREE.MeshPhongMaterial({color:0x222244, side:THREE.DoubleSide})
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10,20,10);
+scene.add(light);
+
+/* Наш аватар */
+function randomColor() {
+  return new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
+}
+const myColor = randomColor();
+const myAvatar = new THREE.Mesh(
+  new THREE.BoxGeometry(1,2,1),
+  new THREE.MeshPhongMaterial({color: myColor})
+);
+myAvatar.position.y = 1;
+scene.add(myAvatar);
+
+/* === 2. УПРАВЛЕНИЕ === */
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function moveAvatar() {
+  let speed = 0.1;
+  if(keys["w"]) myAvatar.position.z -= speed;
+  if(keys["s"]) myAvatar.position.z += speed;
+  if(keys["a"]) myAvatar.position.x -= speed;
+  if(keys["d"]) myAvatar.position.x += speed;
+  camera.position.set(myAvatar.position.x, myAvatar.position.y+2, myAvatar.position.z+5);
+  camera.lookAt(myAvatar.position);
+}
+
+/* === 3. P2P === */
+let id = Math.random().toString(36).substr(2,6);
+let peers = {};
+let channels = {};
+let ws = new WebSocket("wss://echo.websocket.events"); // публичный echo для сигналинга
+
+ws.onopen = () => {
+  console.log("Signaling ready");
+  broadcast({join:id, color: myColor.getHex()});
+};
+
+ws.onmessage = async (msg) => {
+  try {
+    const data = JSON.parse(msg.data);
+    if(!data || data.from === id) return;
+
+    if(data.join && data.join !== id) {
+      connectTo(data.join, data.color);
+    } else if(data.offer) {
+      await onOffer(data);
+    } else if(data.answer) {
+      await peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
+    } else if(data.ice) {
+      await peers[data.from].addIceCandidate(new RTCIceCandidate(data.ice));
+    }
+  } catch(e) {}
+};
+
+function broadcast(obj) {
+  obj.from = id;
+  ws.send(JSON.stringify(obj));
+}
+
+async function connectTo(remoteId, color) {
+  const pc = new RTCPeerConnection();
+  peers[remoteId] = pc;
+  const channel = pc.createDataChannel("data");
+  setupChannel(remoteId, channel, color);
+
+  pc.onicecandidate = e => e.candidate && broadcast({ice:e.candidate, to:remoteId});
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  broadcast({offer, to:remoteId});
+}
+
+async function onOffer(data) {
+  const pc = new RTCPeerConnection();
+  peers[data.from] = pc;
+  pc.ondatachannel = ev => setupChannel(data.from, ev.channel, data.color);
+  pc.onicecandidate = e => e.candidate && broadcast({ice:e.candidate, to:data.from});
+  await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  broadcast({answer, to:data.from});
+}
+
+function setupChannel(remoteId, channel, color) {
+  channels[remoteId] = channel;
+  if(!others[remoteId]) {
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(1,2,1),
+      new THREE.MeshPhongMaterial({color: color || 0xff00ff})
+    );
+    cube.position.y = 1;
+    scene.add(cube);
+    others[remoteId] = cube;
+  }
+  channel.onmessage = e => handleData(remoteId, JSON.parse(e.data));
+}
+
+/* === 4. СИНХРОНИЗАЦИЯ === */
+const others = {};
+function handleData(pid, data) {
+  if(data.pos) {
+    if(others[pid]) {
+      others[pid].position.set(data.pos.x, data.pos.y, data.pos.z);
+    }
+  }
+  if(data.msg) {
+    addMessage(`[${pid}] ${data.msg}`);
+  }
+}
+
+function sendData(obj) {
+  Object.values(channels).forEach(ch => {
+    if(ch.readyState === "open") ch.send(JSON.stringify(obj));
+  });
+}
+
+/* === 5. ЧАТ === */
+const input = document.getElementById("input");
+const messages = document.getElementById("messages");
+input.addEventListener("keydown", e => {
+  if(e.key === "Enter" && input.value.trim() !== "") {
+    const msg = input.value.trim();
+    addMessage(`[me] ${msg}`);
+    sendData({msg});
+    input.value = "";
+  }
+});
+function addMessage(txt) {
+  const div = document.createElement("div");
+  div.textContent = txt;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+/* === 6. ДВЕРИ В ИНТЕРНЕТ === */
+const door = new THREE.Mesh(
+  new THREE.BoxGeometry(3,5,0.2),
+  new THREE.MeshPhongMaterial({color:0x00ffff})
+);
+door.position.set(5,2.5,-5);
+scene.add(door);
+
+window.addEventListener("click", () => {
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera({x:0,y:0}, camera);
+  const hit = ray.intersectObject(door);
+  if(hit.length > 0) {
+    window.open("https://example.com", "_blank");
+  }
+});
+
+/* === 7. ЦИКЛ === */
+function animate() {
+  requestAnimationFrame(animate);
+  moveAvatar();
+  sendData({pos:{x: myAvatar.position.x, y: myAvatar.position.y, z: myAvatar.position.z}});
+  renderer.render(scene, camera);
+}
+animate();
+</script>
 </body>
 </html>
