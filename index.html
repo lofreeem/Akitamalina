@@ -128,9 +128,45 @@
             background: rgba(0, 255, 255, 0.05);
             font-size: 0.9rem;
         }
+        #start-prompt {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            z-index: 200;
+            cursor: pointer;
+            transition: opacity 0.5s, visibility 0.5s;
+            font-family: 'Consolas', 'Menlo', 'monospace';
+        }
+        #start-prompt.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        #start-prompt h1 {
+            font-size: 3rem;
+            color: var(--hud-accent-color);
+            text-shadow: 0 0 10px var(--hud-accent-color);
+            margin-bottom: 1rem;
+        }
+        #start-prompt p {
+            font-size: 1.5rem;
+        }
     </style>
 </head>
 <body>
+    <div id="start-prompt">
+        <h1>Procedural Metaverse</h1>
+        <p>Click to Begin Exploration</p>
+    </div>
     <canvas id="glcanvas"></canvas>
 
     <div id="hud">
@@ -552,6 +588,7 @@
         const readmeEl = document.getElementById('readme');
         const analyzeButton = document.getElementById('analyze-surroundings');
         const loreDisplay = document.getElementById('lore-display');
+        const startPrompt = document.getElementById('start-prompt');
         
         function toggleReadme() { readmeEl.classList.toggle('visible'); if (readmeEl.classList.contains('visible')) document.exitPointerLock(); }
 
@@ -575,19 +612,26 @@
         });
 
         window.addEventListener('keydown', (e) => { 
-            input.keys.add(e.key.toLowerCase()); 
-            if (e.key === 'Escape') {
+            input.keys.add(e.code); 
+            if (e.code === 'Escape') {
                 document.exitPointerLock();
                 if(readmeEl.classList.contains('visible')) toggleReadme();
             }
         });
-        window.addEventListener('keyup', (e) => input.keys.delete(e.key.toLowerCase()));
+        window.addEventListener('keyup', (e) => input.keys.delete(e.code));
         
-        canvas.addEventListener('click', () => {
-            if (!readmeEl.classList.contains('visible')) {
+        function requestLockAndStart() {
+            if (document.pointerLockElement !== canvas) {
                 canvas.requestPointerLock();
             }
-        });
+            if (startPrompt && !startPrompt.classList.contains('hidden')) {
+                startPrompt.classList.add('hidden');
+            }
+        }
+        canvas.addEventListener('click', requestLockAndStart);
+        if (startPrompt) {
+            startPrompt.addEventListener('click', requestLockAndStart);
+        }
 
         document.addEventListener('pointerlockchange', () => {
             if (document.pointerLockElement === canvas) {
@@ -662,8 +706,8 @@
 
         // --- Core Logic ---
         function updatePlayerStateAndSpeed(deltaTime) {
-            const isCrouching = input.keys.has('control');
-            const isSprinting = input.keys.has('shift') && input.keys.has('w') && !isCrouching;
+            const isCrouching = input.keys.has('ControlLeft') || input.keys.has('ControlRight');
+            const isSprinting = (input.keys.has('ShiftLeft') || input.keys.has('ShiftRight')) && input.keys.has('KeyW') && !isCrouching;
 
             let speedMultiplier = 1.0;
             let playerStatus = 'Walking';
@@ -690,43 +734,44 @@
         }
 
         function updateCamera(deltaTime) {
-            const speedMultiplier = updatePlayerStateAndSpeed(deltaTime);
-            const moveSpeed = 5.0 * speedMultiplier * deltaTime;
+            // --- Mouse Look ---
             const lookSpeed = 0.002;
-
-            // Update camera rotation from mouse input
             camera.yaw -= input.mouseDeltaX * lookSpeed;
             camera.pitch -= input.mouseDeltaY * lookSpeed;
-            camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch)); // Clamp pitch
+            camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch));
             input.mouseDeltaX = 0;
             input.mouseDeltaY = 0;
 
-            // Calculate forward and right vectors based on camera yaw.
-            // Re-using sin/cos is more efficient than calling them multiple times.
+            // --- Keyboard Movement ---
+            const speedMultiplier = updatePlayerStateAndSpeed(deltaTime);
+            const moveSpeed = 5.0 * speedMultiplier * deltaTime;
+
+            const forwardInput = (input.keys.has('KeyW') ? 1 : 0) - (input.keys.has('KeyS') ? 1 : 0);
+            const rightInput = (input.keys.has('KeyD') ? 1 : 0) - (input.keys.has('KeyA') ? 1 : 0);
+            const upInput = (input.keys.has('KeyE') ? 1 : 0) - (input.keys.has('KeyQ') ? 1 : 0);
+            
+            // Exit early if no input
+            if (forwardInput === 0 && rightInput === 0 && upInput === 0) {
+                return;
+            }
+
             const sinYaw = Math.sin(camera.yaw);
             const cosYaw = Math.cos(camera.yaw);
-            const forward = [sinYaw, 0, cosYaw];
-            const right = [cosYaw, 0, -sinYaw]; 
-            
-            // Determine movement direction from keyboard input
-            let moveDir = [0, 0, 0];
-            if (input.keys.has('w')) { moveDir[0] += forward[0]; moveDir[2] += forward[2]; }
-            if (input.keys.has('s')) { moveDir[0] -= forward[0]; moveDir[2] -= forward[2]; }
-            if (input.keys.has('d')) { moveDir[0] += right[0];   moveDir[2] += right[2]; }
-            if (input.keys.has('a')) { moveDir[0] -= right[0];   moveDir[2] -= right[2]; }
-            if (input.keys.has('e')) { moveDir[1] += 1; }
-            if (input.keys.has('q')) { moveDir[1] -= 1; }
 
-            // Normalize movement vector to prevent faster diagonal movement, then apply speed.
-            const len = Math.sqrt(moveDir[0] * moveDir[0] + moveDir[1] * moveDir[1] + moveDir[2] * moveDir[2]);
-            if (len > 0.0001) {
-                const invLen = 1.0 / len;
-                
-                // Apply movement to camera position
-                camera.pos[0] += moveDir[0] * invLen * moveSpeed;
-                camera.pos[1] += moveDir[1] * invLen * moveSpeed;
-                camera.pos[2] += moveDir[2] * invLen * moveSpeed;
+            // Calculate horizontal movement vector
+            let moveX = (forwardInput * sinYaw) + (rightInput * cosYaw);
+            let moveZ = (forwardInput * cosYaw) - (rightInput * sinYaw);
+
+            // Normalize horizontal vector to prevent faster diagonal movement
+            const horizontalLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+            if (horizontalLen > 0.001) {
+                const invLen = 1.0 / horizontalLen;
+                camera.pos[0] += moveX * invLen * moveSpeed;
+                camera.pos[2] += moveZ * invLen * moveSpeed;
             }
+            
+            // Apply vertical movement separately
+            camera.pos[1] += upInput * moveSpeed;
         }
         
         function updateEnvironment(deltaTime) {
