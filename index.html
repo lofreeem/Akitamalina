@@ -215,6 +215,7 @@
         // --- World Uniforms ---
         uniform int u_maxSteps;
         uniform int u_aoSamples;
+        uniform int u_qualityLevel;
 
         // --- Dynamic Environment ---
         uniform vec3 u_sunDir;
@@ -367,7 +368,7 @@
             sky = mix(nightSkyColor, sky, sunElevation * 1.2);
             
             // --- Dynamic Clouds ---
-            if (sunElevation > 0.01) {
+            if (u_qualityLevel > 0 && sunElevation > 0.01) { // 0=low, 1=med, 2=high. Skip clouds on low.
                 // Project ray direction for 2D noise lookup, animate with time
                 vec2 cloudUV = rd.xz / (rd.y * 0.5 + 0.5);
                 cloudUV += time * 0.02;
@@ -486,7 +487,7 @@
         const camera = { pos: [0, 5, -5], yaw: Math.PI, pitch: -0.2 };
         const input = { keys: new Set(), mouseDeltaX: 0, mouseDeltaY: 0 };
         const state = {
-            quality: 'medium',
+            quality: 'low',
             autoQuality: true,
             frameTimes: [],
             lastQualityCheck: 0,
@@ -534,6 +535,7 @@
                 sunDir: gl.getUniformLocation(program, 'u_sunDir'),
                 maxSteps: gl.getUniformLocation(program, 'u_maxSteps'),
                 aoSamples: gl.getUniformLocation(program, 'u_aoSamples'),
+                qualityLevel: gl.getUniformLocation(program, 'u_qualityLevel'),
             },
         };
 
@@ -692,29 +694,38 @@
             const moveSpeed = 5.0 * speedMultiplier * deltaTime;
             const lookSpeed = 0.002;
 
+            // Update camera rotation from mouse input
             camera.yaw -= input.mouseDeltaX * lookSpeed;
             camera.pitch -= input.mouseDeltaY * lookSpeed;
-            camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch));
+            camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch)); // Clamp pitch
             input.mouseDeltaX = 0;
             input.mouseDeltaY = 0;
 
-            const forward = [Math.sin(camera.yaw), 0, Math.cos(camera.yaw)];
-            const right = [Math.sin(camera.yaw + Math.PI / 2), 0, Math.cos(camera.yaw + Math.PI / 2)];
+            // Calculate forward and right vectors based on camera yaw.
+            // Re-using sin/cos is more efficient than calling them multiple times.
+            const sinYaw = Math.sin(camera.yaw);
+            const cosYaw = Math.cos(camera.yaw);
+            const forward = [sinYaw, 0, cosYaw];
+            const right = [cosYaw, 0, -sinYaw]; 
+            
+            // Determine movement direction from keyboard input
             let moveDir = [0, 0, 0];
-
             if (input.keys.has('w')) { moveDir[0] += forward[0]; moveDir[2] += forward[2]; }
             if (input.keys.has('s')) { moveDir[0] -= forward[0]; moveDir[2] -= forward[2]; }
-            if (input.keys.has('d')) { moveDir[0] += right[0]; moveDir[2] += right[2]; }
-            if (input.keys.has('a')) { moveDir[0] -= right[0]; moveDir[2] -= right[2]; }
+            if (input.keys.has('d')) { moveDir[0] += right[0];   moveDir[2] += right[2]; }
+            if (input.keys.has('a')) { moveDir[0] -= right[0];   moveDir[2] -= right[2]; }
             if (input.keys.has('e')) { moveDir[1] += 1; }
             if (input.keys.has('q')) { moveDir[1] -= 1; }
 
+            // Normalize movement vector to prevent faster diagonal movement, then apply speed.
             const len = Math.sqrt(moveDir[0] * moveDir[0] + moveDir[1] * moveDir[1] + moveDir[2] * moveDir[2]);
-            if (len > 0.01) {
-                moveDir = moveDir.map(v => v / len);
-                camera.pos[0] += moveDir[0] * moveSpeed;
-                camera.pos[1] += moveDir[1] * moveSpeed;
-                camera.pos[2] += moveDir[2] * moveSpeed;
+            if (len > 0.0001) {
+                const invLen = 1.0 / len;
+                
+                // Apply movement to camera position
+                camera.pos[0] += moveDir[0] * invLen * moveSpeed;
+                camera.pos[1] += moveDir[1] * invLen * moveSpeed;
+                camera.pos[2] += moveDir[2] * invLen * moveSpeed;
             }
         }
         
@@ -795,6 +806,9 @@
             })();
             const sunAngle = state.world.timeOfDay * 2.0 * Math.PI;
             const sunDir = normalize([Math.sin(sunAngle), Math.cos(sunAngle) * 0.8, Math.cos(sunAngle) * -0.2]);
+            
+            const qualityLevels = ['low', 'medium', 'high'];
+            const qualityLevel = qualityLevels.indexOf(state.quality);
 
             gl.uniform2f(programInfo.uniformLocations.resolution, canvas.width, canvas.height);
             gl.uniform1f(programInfo.uniformLocations.time, time);
@@ -804,6 +818,7 @@
             
             gl.uniform1i(programInfo.uniformLocations.maxSteps, qualitySettings.maxSteps);
             gl.uniform1i(programInfo.uniformLocations.aoSamples, qualitySettings.aoSamples);
+            gl.uniform1i(programInfo.uniformLocations.qualityLevel, qualityLevel);
 
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
