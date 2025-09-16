@@ -1,204 +1,87 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Mini Metaverse P2P</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
-    #chat {
-      position: absolute; right: 0; top: 0; width: 250px; height: 100%;
-      background: rgba(0,0,0,0.6); color: #0f0; padding: 5px; display: flex; flex-direction: column;
-    }
-    #messages { flex: 1; overflow-y: auto; }
-    #input { border: none; padding: 5px; font-size: 14px; }
-  </style>
+<meta charset="UTF-8">
+<title>P2P Chat</title>
+<style>
+body { font-family: monospace; background:#111; color:#0f0; display:flex; flex-direction:column; align-items:center; padding:20px;}
+textarea, input { width:400px; margin:5px 0; font-family: monospace;}
+#messages { width:400px; height:200px; overflow-y:auto; border:1px solid #0f0; padding:5px; margin-bottom:10px;}
+</style>
 </head>
 <body>
-<div id="chat">
-  <div id="messages"></div>
-  <input id="input" placeholder="Type message..."/>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<h2>P2P Chat без сервера</h2>
+<div id="messages"></div>
+<input id="input" placeholder="Введите сообщение и нажмите Enter">
+<button onclick="createOffer()">Создать Offer</button>
+<textarea id="offer" placeholder="Offer / Answer" rows="5"></textarea>
+<button onclick="acceptOffer()">Принять Offer</button>
+<button onclick="acceptAnswer()">Принять Answer</button>
 
 <script>
-/* === 1. СЦЕНА === */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x101020);
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+let pc;
+let channel;
+let remoteId = "peer";
 
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(500,500),
-  new THREE.MeshPhongMaterial({color:0x222244, side:THREE.DoubleSide})
-);
-floor.rotation.x = -Math.PI/2;
-scene.add(floor);
-
-const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(10,20,10);
-scene.add(light);
-
-/* Наш аватар */
-function randomColor() {
-  return new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
-}
-const myColor = randomColor();
-const myAvatar = new THREE.Mesh(
-  new THREE.BoxGeometry(1,2,1),
-  new THREE.MeshPhongMaterial({color: myColor})
-);
-myAvatar.position.y = 1;
-scene.add(myAvatar);
-
-/* === 2. УПРАВЛЕНИЕ === */
-let keys = {};
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
-
-function moveAvatar() {
-  let speed = 0.1;
-  if(keys["w"]) myAvatar.position.z -= speed;
-  if(keys["s"]) myAvatar.position.z += speed;
-  if(keys["a"]) myAvatar.position.x -= speed;
-  if(keys["d"]) myAvatar.position.x += speed;
-  camera.position.set(myAvatar.position.x, myAvatar.position.y+2, myAvatar.position.z+5);
-  camera.lookAt(myAvatar.position);
-}
-
-/* === 3. P2P === */
-let id = Math.random().toString(36).substr(2,6);
-let peers = {};
-let channels = {};
-let ws = new WebSocket("wss://echo.websocket.events"); // публичный echo для сигналинга
-
-ws.onopen = () => {
-  console.log("Signaling ready");
-  broadcast({join:id, color: myColor.getHex()});
-};
-
-ws.onmessage = async (msg) => {
-  try {
-    const data = JSON.parse(msg.data);
-    if(!data || data.from === id) return;
-
-    if(data.join && data.join !== id) {
-      connectTo(data.join, data.color);
-    } else if(data.offer) {
-      await onOffer(data);
-    } else if(data.answer) {
-      await peers[data.from].setRemoteDescription(new RTCSessionDescription(data.answer));
-    } else if(data.ice) {
-      await peers[data.from].addIceCandidate(new RTCIceCandidate(data.ice));
-    }
-  } catch(e) {}
-};
-
-function broadcast(obj) {
-  obj.from = id;
-  ws.send(JSON.stringify(obj));
-}
-
-async function connectTo(remoteId, color) {
-  const pc = new RTCPeerConnection();
-  peers[remoteId] = pc;
-  const channel = pc.createDataChannel("data");
-  setupChannel(remoteId, channel, color);
-
-  pc.onicecandidate = e => e.candidate && broadcast({ice:e.candidate, to:remoteId});
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  broadcast({offer, to:remoteId});
-}
-
-async function onOffer(data) {
-  const pc = new RTCPeerConnection();
-  peers[data.from] = pc;
-  pc.ondatachannel = ev => setupChannel(data.from, ev.channel, data.color);
-  pc.onicecandidate = e => e.candidate && broadcast({ice:e.candidate, to:data.from});
-  await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  broadcast({answer, to:data.from});
-}
-
-function setupChannel(remoteId, channel, color) {
-  channels[remoteId] = channel;
-  if(!others[remoteId]) {
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(1,2,1),
-      new THREE.MeshPhongMaterial({color: color || 0xff00ff})
-    );
-    cube.position.y = 1;
-    scene.add(cube);
-    others[remoteId] = cube;
-  }
-  channel.onmessage = e => handleData(remoteId, JSON.parse(e.data));
-}
-
-/* === 4. СИНХРОНИЗАЦИЯ === */
-const others = {};
-function handleData(pid, data) {
-  if(data.pos) {
-    if(others[pid]) {
-      others[pid].position.set(data.pos.x, data.pos.y, data.pos.z);
-    }
-  }
-  if(data.msg) {
-    addMessage(`[${pid}] ${data.msg}`);
-  }
-}
-
-function sendData(obj) {
-  Object.values(channels).forEach(ch => {
-    if(ch.readyState === "open") ch.send(JSON.stringify(obj));
-  });
-}
-
-/* === 5. ЧАТ === */
-const input = document.getElementById("input");
 const messages = document.getElementById("messages");
-input.addEventListener("keydown", e => {
-  if(e.key === "Enter" && input.value.trim() !== "") {
-    const msg = input.value.trim();
-    addMessage(`[me] ${msg}`);
-    sendData({msg});
-    input.value = "";
-  }
-});
-function addMessage(txt) {
-  const div = document.createElement("div");
-  div.textContent = txt;
-  messages.appendChild(div);
+const input = document.getElementById("input");
+const offerTextarea = document.getElementById("offer");
+
+function log(msg){
+  const d=document.createElement("div"); d.textContent=msg; messages.appendChild(d);
   messages.scrollTop = messages.scrollHeight;
 }
 
-/* === 6. ДВЕРИ В ИНТЕРНЕТ === */
-const door = new THREE.Mesh(
-  new THREE.BoxGeometry(3,5,0.2),
-  new THREE.MeshPhongMaterial({color:0x00ffff})
-);
-door.position.set(5,2.5,-5);
-scene.add(door);
+/* ===== Создаем offer ===== */
+function createOffer(){
+  pc = new RTCPeerConnection();
+  channel = pc.createDataChannel("chat");
+  setupChannel();
+  pc.onicecandidate = e=>{ if(e.candidate) console.log("ICE candidate:", JSON.stringify(e.candidate)); };
+  pc.createOffer().then(offer=>{
+    pc.setLocalDescription(offer);
+    offerTextarea.value = JSON.stringify(offer);
+    log("Offer создан! Скопируйте и отправьте другому игроку.");
+  });
+}
 
-window.addEventListener("click", () => {
-  const ray = new THREE.Raycaster();
-  ray.setFromCamera({x:0,y:0}, camera);
-  const hit = ray.intersectObject(door);
-  if(hit.length > 0) {
-    window.open("https://example.com", "_blank");
+/* ===== Принимаем offer ===== */
+function acceptOffer(){
+  const offer = JSON.parse(offerTextarea.value);
+  pc = new RTCPeerConnection();
+  pc.ondatachannel = ev=>{ channel = ev.channel; setupChannel(); };
+  pc.onicecandidate = e=>{ if(e.candidate) console.log("ICE candidate:", JSON.stringify(e.candidate)); };
+  pc.setRemoteDescription(new RTCSessionDescription(offer)).then(()=>{
+    pc.createAnswer().then(answer=>{
+      pc.setLocalDescription(answer);
+      offerTextarea.value = JSON.stringify(answer);
+      log("Answer создан! Отправьте обратно создателю offer.");
+    });
+  });
+}
+
+/* ===== Принимаем answer ===== */
+function acceptAnswer(){
+  const answer = JSON.parse(offerTextarea.value);
+  pc.setRemoteDescription(new RTCSessionDescription(answer));
+  log("Соединение установлено!");
+}
+
+/* ===== Настройка канала ===== */
+function setupChannel(){
+  channel.onopen = ()=>log("Канал открыт!");
+  channel.onmessage = e=>log("Peer: "+e.data);
+}
+
+/* ===== Отправка сообщений ===== */
+input.addEventListener("keydown", e=>{
+  if(e.key==="Enter" && input.value.trim()!==""){
+    const msg = input.value.trim();
+    channel.send(msg);
+    log("Me: "+msg);
+    input.value="";
   }
 });
-
-/* === 7. ЦИКЛ === */
-function animate() {
-  requestAnimationFrame(animate);
-  moveAvatar();
-  sendData({pos:{x: myAvatar.position.x, y: myAvatar.position.y, z: myAvatar.position.z}});
-  renderer.render(scene, camera);
-}
-animate();
 </script>
 </body>
 </html>
