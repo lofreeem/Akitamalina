@@ -55,15 +55,92 @@
             z-index: 101;
             text-shadow: 1px 1px 2px black;
         }
+        /* --- Mobile Controls CSS --- */
+        #mobile-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 102;
+            display: none; /* Hidden by default */
+        }
+        #joystick-container {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 150px;
+            height: 150px;
+            pointer-events: auto;
+        }
+        #joystick-base {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+        }
+        #joystick-handle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: transform 0.05s linear;
+        }
+        #action-container {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            pointer-events: auto;
+        }
+        .action-button {
+            width: 60px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            user-select: none; /* Prevent text selection */
+            -webkit-user-select: none; /* For Safari */
+        }
+        .action-button:active {
+            background: rgba(255, 255, 255, 0.5);
+        }
     </style>
 </head>
 <body>
     <div id="start-prompt">
         <h1>Procedural World</h1>
-        <p>Click to Explore</p>
+        <p>Click or Tap to Explore</p>
     </div>
     <div id="debug-info"></div>
     <canvas id="glcanvas"></canvas>
+
+    <div id="mobile-controls">
+        <div id="joystick-container">
+            <div id="joystick-base">
+                <div id="joystick-handle"></div>
+            </div>
+        </div>
+        <div id="action-container">
+            <div id="sprint-button" class="action-button">🚀</div>
+            <div id="up-button" class="action-button">🔼</div>
+            <div id="down-button" class="action-button">🔽</div>
+        </div>
+    </div>
 
     <!-- ==== SCENE SHADERS ==== -->
     <script id="scene-vertex-shader" type="x-shader/x-vertex">
@@ -104,7 +181,7 @@
     #elif QUALITY_LEVEL == QUALITY_LOW
         const int MAX_STEPS = 60;
     #else // POTATO
-        const int MAX_STEPS = 45;
+        const int MAX_STEPS = 40;
     #endif
 
     // --- World Constants ---
@@ -345,6 +422,7 @@
 
     // --- Physically Based Atmosphere ---
     vec3 getAtmosphere(vec3 rd, vec3 sunDir, out vec3 sunColor) {
+    #if QUALITY_LEVEL >= QUALITY_MEDIUM
         float sunHeight = max(0.0, sunDir.y);
         // Rayleigh scattering (makes sky blue)
         float rayleigh = (1.0 - pow(rd.y, 2.0));
@@ -361,6 +439,18 @@
         skyColor += sunColor * pow(max(0.0, dot(rd, sunDir)), 4096.0); // Sun disc
         skyColor = mix(vec3(0.0), skyColor, smoothstep(-0.05, 0.05, sunDir.y));
         return skyColor;
+    #else // Simplified sky for LOW and POTATO
+        float sunHeight = max(0.0, sunDir.y);
+        vec3 topColor = vec3(0.15, 0.25, 0.45);
+        vec3 horizonColor = mix(vec3(0.7, 0.35, 0.2), vec3(0.4, 0.3, 0.25), sunHeight);
+        vec3 skyColor = mix(horizonColor, topColor, smoothstep(0.0, 0.4, rd.y));
+        
+        sunColor = mix(vec3(1.0, 0.7, 0.4), vec3(1.0, 0.95, 0.9), smoothstep(0.0, 0.15, sunHeight));
+        skyColor += sunColor * pow(max(0.0, dot(rd, sunDir)), 1024.0); // Keep sun disc
+        
+        skyColor = mix(vec3(0.0), skyColor, smoothstep(-0.05, 0.05, sunDir.y)); // Night fade
+        return skyColor;
+    #endif
     }
     
     // --- Volumetric Clouds ---
@@ -530,13 +620,14 @@
             vec3 surfaceColor;
 
             if (materialID > 3.5 && materialID < 4.5) { // Water
+            #if QUALITY_LEVEL >= QUALITY_LOW // Cheaper water for POTATO
                 vec3 reflectedRay = reflect(rd, n);
                 vec3 reflectionColor;
                 float reflTransmittance = 1.0;
                 reflectionColor = getAtmosphere(reflectedRay, sunDir, sunColor);
                 #if QUALITY_LEVEL >= QUALITY_MEDIUM
                     renderVolumetricClouds(p, reflectedRay, sunDir, sunColor, reflectionColor, reflTransmittance);
-                #elif QUALITY_LEVEL >= QUALITY_LOW
+                #else // QUALITY_LOW
                     reflectionColor = render2DClouds(reflectedRay, sunDir, u_time, reflectionColor);
                 #endif
                 
@@ -547,6 +638,16 @@
                 vec3 h = normalize(sunDir + v);
                 float spec = pow(max(dot(n, h), 0.0), 256.0);
                 surfaceColor += sunColor * spec * 2.0;
+            #else // POTATO quality water
+                // Super cheap water: No reflections, just fresnel mix with sky color
+                float depth = map_no_water(p - n*0.1).x;
+                vec3 waterColor = mix(vec3(0.1, 0.2, 0.3), vec3(0.0, 0.4, 0.4), exp(-depth*0.15));
+                float fresnel = pow(1.0 - max(0.0, dot(v, n)), 3.0);
+                surfaceColor = mix(waterColor, skyColor, fresnel);
+                vec3 h = normalize(sunDir + v);
+                float spec = pow(max(dot(n, h), 0.0), 128.0);
+                surfaceColor += sunColor * spec * 1.5;
+            #endif
             } else { // Terrain / Trees
                 Material mat = getMaterial(materialID, p, n);
                 float ao = calcAO(p, n);
@@ -687,15 +788,18 @@
             alert('Your browser does not support WebGL.');
             throw new Error('WebGL not supported');
         }
+        
+        let isMobile = false;
 
         const camera = { 
             pos: [0, 25, -5], yaw: Math.PI, pitch: -0.2,
             velocity: [0, 0, 0], angularVelocity: { yaw: 0, pitch: 0 }
         };
-        const input = { keys: new Set() };
+        const input = { keys: new Set(), moveVec: { x: 0, y: 0 } };
         let timeOfDay = 0.25;
         
         const MOUSE_SENSITIVITY = 0.002;
+        const TOUCH_SENSITIVITY = 0.003;
         const ACCELERATION = 120.0;
         const DAMPING = 15.0;
         const ANGULAR_DAMPING = 10.0;
@@ -853,22 +957,128 @@
 
         const startPrompt = document.getElementById('start-prompt');
         const debugInfo = document.getElementById('debug-info');
-        function requestLockAndStart() {
-            if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
-            if (!startPrompt.classList.contains('hidden')) startPrompt.classList.add('hidden');
+        let appRunning = false;
+        function startApp() {
+            if (appRunning) return;
+            appRunning = true;
+            if (!isMobile && document.pointerLockElement !== canvas) {
+                canvas.requestPointerLock();
+            }
+            if (!startPrompt.classList.contains('hidden')) {
+                startPrompt.classList.add('hidden');
+            }
         }
-        canvas.addEventListener('click', requestLockAndStart);
-        startPrompt.addEventListener('click', requestLockAndStart);
+        canvas.addEventListener('click', startApp);
+        startPrompt.addEventListener('click', startApp);
+        canvas.addEventListener('touchstart', startApp, {passive: true});
+        startPrompt.addEventListener('touchstart', startApp, {passive: true});
+
         window.addEventListener('keydown', (e) => input.keys.add(e.code));
         window.addEventListener('keyup', (e) => input.keys.delete(e.code));
         window.addEventListener('keydown', (e) => { if (e.code === 'Escape') document.exitPointerLock() });
         document.addEventListener('pointerlockchange', () => {
-            if (document.pointerLockElement === canvas) document.addEventListener('mousemove', updateMouse, false);
-            else document.removeEventListener('mousemove', updateMouse, false);
+            if (document.pointerLockElement === canvas) {
+                document.addEventListener('mousemove', updateMouse, false);
+            } else {
+                document.removeEventListener('mousemove', updateMouse, false);
+            }
         });
         function updateMouse(e) {
             camera.angularVelocity.yaw -= e.movementX * MOUSE_SENSITIVITY;
             camera.angularVelocity.pitch -= e.movementY * MOUSE_SENSITIVITY;
+        }
+
+        function initMobileControls() {
+            const mobileControls = document.getElementById('mobile-controls');
+            mobileControls.style.display = 'block';
+
+            const joystickContainer = document.getElementById('joystick-container');
+            const joystickHandle = document.getElementById('joystick-handle');
+            const maxJoyDist = joystickContainer.clientWidth / 2;
+            const joyState = { touchId: -1, startX: 0, startY: 0 };
+            
+            const lookState = { touchId: -1, prevX: 0, prevY: 0 };
+            
+            const actionButtons = {
+                sprint: document.getElementById('sprint-button'),
+                up: document.getElementById('up-button'),
+                down: document.getElementById('down-button'),
+            };
+
+            function handleButton(button, key, start) {
+                return (e) => {
+                    e.preventDefault();
+                    if(start) input.keys.add(key); else input.keys.delete(key);
+                }
+            }
+            actionButtons.sprint.addEventListener('touchstart', handleButton(this, 'MobileSprint', true), {passive: false});
+            actionButtons.sprint.addEventListener('touchend', handleButton(this, 'MobileSprint', false), {passive: false});
+            actionButtons.up.addEventListener('touchstart', handleButton(this, 'MobileUp', true), {passive: false});
+            actionButtons.up.addEventListener('touchend', handleButton(this, 'MobileUp', false), {passive: false});
+            actionButtons.down.addEventListener('touchstart', handleButton(this, 'MobileDown', true), {passive: false});
+            actionButtons.down.addEventListener('touchend', handleButton(this, 'MobileDown', false), {passive: false});
+
+
+            canvas.addEventListener('touchstart', (e) => {
+                for (const touch of e.changedTouches) {
+                    const isRightSide = touch.clientX > window.innerWidth / 2;
+
+                    if (isRightSide) {
+                        if (lookState.touchId === -1) {
+                            lookState.touchId = touch.identifier;
+                            lookState.prevX = touch.clientX;
+                            lookState.prevY = touch.clientY;
+                        }
+                    } else { // Left side for joystick
+                         if (joyState.touchId === -1) {
+                            joyState.touchId = touch.identifier;
+                            joyState.startX = touch.clientX;
+                            joyState.startY = touch.clientY;
+                         }
+                    }
+                }
+            }, {passive: true});
+            
+            canvas.addEventListener('touchmove', (e) => {
+                 e.preventDefault();
+                 for (const touch of e.changedTouches) {
+                    if (touch.identifier === lookState.touchId) {
+                        const dx = touch.clientX - lookState.prevX;
+                        const dy = touch.clientY - lookState.prevY;
+                        camera.angularVelocity.yaw -= dx * TOUCH_SENSITIVITY;
+                        camera.angularVelocity.pitch -= dy * TOUCH_SENSITIVITY;
+                        lookState.prevX = touch.clientX;
+                        lookState.prevY = touch.clientY;
+                    } else if (touch.identifier === joyState.touchId) {
+                        const dx = touch.clientX - joyState.startX;
+                        const dy = touch.clientY - joyState.startY;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        const clampedDist = Math.min(dist, maxJoyDist);
+                        const angle = Math.atan2(dy, dx);
+                        
+                        const handleX = Math.cos(angle) * clampedDist;
+                        const handleY = Math.sin(angle) * clampedDist;
+                        
+                        joystickHandle.style.transform = `translate(-50%, -50%) translate(${handleX}px, ${handleY}px)`;
+                        
+                        input.moveVec.x = handleX / maxJoyDist;
+                        input.moveVec.y = -(handleY / maxJoyDist); // Invert Y
+                    }
+                 }
+            }, {passive: false});
+
+            canvas.addEventListener('touchend', (e) => {
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier === lookState.touchId) {
+                        lookState.touchId = -1;
+                    } else if (touch.identifier === joyState.touchId) {
+                        joyState.touchId = -1;
+                        input.moveVec.x = 0;
+                        input.moveVec.y = 0;
+                        joystickHandle.style.transform = `translate(-50%, -50%)`;
+                    }
+                }
+            });
         }
 
         function updateCamera(deltaTime) {
@@ -879,17 +1089,25 @@
             camera.angularVelocity.yaw *= Math.exp(-ANGULAR_DAMPING * deltaTime);
             camera.angularVelocity.pitch *= Math.exp(-ANGULAR_DAMPING * deltaTime);
             
-            const boost = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+            const boost = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') || input.keys.has('MobileSprint');
             const currentAcceleration = ACCELERATION * (boost ? 5.0 : 1.0);
-            const forward = (input.keys.has('KeyW')||input.keys.has('ArrowUp')?1:0)-(input.keys.has('KeyS')||input.keys.has('ArrowDown')?1:0);
-            const right = (input.keys.has('KeyD')||input.keys.has('ArrowRight')?1:0)-(input.keys.has('KeyA')||input.keys.has('ArrowLeft')?1:0);
-            const up = (input.keys.has('KeyE') || input.keys.has('Space') ? 1:0) - (input.keys.has('KeyQ')?1:0);
             
+            let forward = (input.keys.has('KeyW')||input.keys.has('ArrowUp')?1:0)-(input.keys.has('KeyS')||input.keys.has('ArrowDown')?1:0);
+            let right = (input.keys.has('KeyD')||input.keys.has('ArrowRight')?1:0)-(input.keys.has('KeyA')||input.keys.has('ArrowLeft')?1:0);
+            let up = (input.keys.has('KeyE') || input.keys.has('Space') || input.keys.has('MobileUp') ? 1:0) - (input.keys.has('KeyQ') || input.keys.has('MobileDown') ?1:0);
+            
+            forward -= input.moveVec.y; // Joystick forward/backward
+            right += input.moveVec.x;   // Joystick strafe
+
             let moveX = (forward * Math.sin(camera.yaw)) + (right * Math.cos(camera.yaw));
             let moveZ = (forward * Math.cos(camera.yaw)) - (right * Math.sin(camera.yaw));
             
-            const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
-            if (len > 0.001) { moveX /= len; moveZ /= len; }
+            const moveLen = Math.sqrt(forward*forward + right*right);
+            if (moveLen > 0.001) {
+                const maxIn = Math.max(Math.abs(forward), Math.abs(right));
+                moveX /= maxIn;
+                moveZ /= maxIn;
+            }
 
             const targetVelocity = [moveX * currentAcceleration, up * currentAcceleration, moveZ * currentAcceleration];
             for(let i=0; i<3; ++i) {
@@ -908,7 +1126,7 @@
             const deltaTime = Math.min(0.1, time - lastTime);
             lastTime = time;
 
-            if (document.pointerLockElement === canvas && deltaTime > 0) {
+            if (appRunning && deltaTime > 0) {
                  updateCamera(deltaTime);
                  perf.update(deltaTime);
             }
@@ -1039,7 +1257,6 @@
                 const program = createProgram(postVertexShader, document.getElementById(postShaderSources[name]).text);
                 if (!program) {
                     console.error(`Failed to create post-processing program: ${name}`);
-                    // You might want to handle this more gracefully, e.g., by disabling post-processing
                     return;
                 }
                 postPrograms[name] = {
@@ -1047,7 +1264,6 @@
                     attribs: { position: gl.getAttribLocation(program, 'a_position') },
                     uniforms: {}
                 };
-                // A simple way to get all uniforms
                 const uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
                 for(let i=0; i<uniformCount; i++) {
                     const uniformInfo = gl.getActiveUniform(program, i);
@@ -1057,8 +1273,11 @@
             gl.deleteShader(postVertexShader);
 
 
-            const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-            await perf.setQuality(isMobile ? 'MEDIUM' : 'ULTRA');
+            isMobile = /Mobi|Android/i.test(navigator.userAgent);
+            if(isMobile) {
+                initMobileControls();
+            }
+            await perf.setQuality(isMobile ? 'MEDIUM' : 'HIGH');
             requestAnimationFrame(render);
         }
 
