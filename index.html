@@ -346,6 +346,10 @@
                         <button class="weather-btn" data-weather="2">🌧️ Дождь</button>
                     </div>
                 </div>
+                <div class="control-group">
+                    <label for="volume-slider">Общая громкость</label>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.5">
+                </div>
                 <div class="sandbox-actions">
                     <button id="regenerate-world-btn" class="vamba-button">Пересоздать Мир</button>
                     <button id="photo-mode-btn" class="vamba-button icon-button" title="Фото-режим">📷</button>
@@ -817,6 +821,82 @@
         const DAMPING = 15.0;
         const ANGULAR_DAMPING = 10.0;
 
+        const audioManager = {
+            context: null,
+            masterGain: null,
+            sounds: {
+                wind: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fwind-loop.wav', gainValue: 0.3 },
+                rain: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Frain-loop.wav', gainValue: 0.8 },
+                day: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fbirds-loop.wav', gainValue: 0.5 },
+                night: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fcrickets-loop.wav', gainValue: 0.5 },
+                waves: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fwaves-loop.wav', gainValue: 0.7 },
+            },
+            isInitialized: false,
+            
+            async init() {
+                if (this.isInitialized || this.context) return;
+                try {
+                    this.context = new (window.AudioContext || window.webkitAudioContext)();
+                    this.masterGain = this.context.createGain();
+                    this.masterGain.gain.value = 0.5; // Default volume from slider
+                    this.masterGain.connect(this.context.destination);
+
+                    for (const key in this.sounds) {
+                        const sound = this.sounds[key];
+                        const response = await fetch(sound.url);
+                        const arrayBuffer = await response.arrayBuffer();
+                        sound.buffer = await this.context.decodeAudioData(arrayBuffer);
+
+                        sound.gain = this.context.createGain();
+                        sound.gain.gain.value = 0.0; // Start silent
+                        sound.gain.connect(this.masterGain);
+
+                        sound.source = this.context.createBufferSource();
+                        sound.source.buffer = sound.buffer;
+                        sound.source.loop = true;
+                        sound.source.connect(sound.gain);
+                        sound.source.start(0);
+                    }
+                    this.isInitialized = true;
+                } catch (e) {
+                    console.error("Error initializing audio:", e);
+                }
+            },
+
+            update(timeOfDay, weatherState, camPos) {
+                if (!this.isInitialized) return;
+                const now = this.context.currentTime;
+                const fadeTime = now + 1.0; // 1 second fade
+
+                const sunAngle = (timeOfDay - 0.25) * 2.0 * Math.PI;
+                const sunY = Math.cos(sunAngle);
+
+                const dayAmount = this._smoothstep(0.0, 0.1, sunY);
+                const nightAmount = this._smoothstep(0.0, -0.1, -sunY);
+                const clearAmount = 1.0 - this._smoothstep(0.0, 1.0, weatherState);
+                const rainAmount = this._smoothstep(1.5, 2.0, weatherState);
+
+                this.sounds.day.gain.gain.linearRampToValueAtTime(dayAmount * this.sounds.day.gainValue * clearAmount, fadeTime);
+                this.sounds.night.gain.gain.linearRampToValueAtTime(nightAmount * this.sounds.night.gainValue, fadeTime);
+                this.sounds.rain.gain.gain.linearRampToValueAtTime(rainAmount * this.sounds.rain.gainValue, fadeTime);
+                this.sounds.wind.gain.gain.linearRampToValueAtTime(this.sounds.wind.gainValue * (0.5 + rainAmount * 0.5), fadeTime);
+
+                const distToSea = Math.abs(camPos[1] - SEA_LEVEL);
+                const waveAmount = this._smoothstep(60.0, 5.0, distToSea);
+                this.sounds.waves.gain.gain.linearRampToValueAtTime(waveAmount * this.sounds.waves.gainValue, fadeTime);
+            },
+            
+            setMasterVolume(volume) {
+                if (!this.isInitialized) return;
+                this.masterGain.gain.linearRampToValueAtTime(volume, this.context.currentTime + 0.1);
+            },
+
+            _smoothstep: (edge0, edge1, x) => {
+                const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+                return t * t * (3 - 2 * t);
+            }
+        };
+
         const perf = {
             frameTimes: [],
             avgFps: 60,
@@ -926,6 +1006,7 @@
         function startApp() {
             if (appRunning) return;
             appRunning = true;
+            audioManager.init();
             if (!isMobile && document.pointerLockElement !== canvas) {
                 canvas.requestPointerLock();
             }
@@ -1072,6 +1153,9 @@
                     e.target.classList.add('active');
                 }
             });
+            document.getElementById('volume-slider').addEventListener('input', (e) => {
+                audioManager.setMasterVolume(parseFloat(e.target.value));
+            });
             document.getElementById('photo-mode-btn').addEventListener('click', () => { document.body.classList.toggle('photo-mode'); });
             document.getElementById('mobile-menu-toggle').addEventListener('click', () => { document.getElementById('vamba-panel').classList.toggle('mobile-visible'); });
         }
@@ -1084,6 +1168,7 @@
 
             if (appRunning && deltaTime > 0) {
                  updateCamera(deltaTime);
+                 audioManager.update(timeOfDay, weatherState, camera.pos);
                  perf.update(deltaTime);
             }
 
