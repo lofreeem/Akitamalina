@@ -468,6 +468,18 @@
         } return f;
     }
     
+    #if QUALITY_LEVEL == QUALITY_POTATO
+    float bayer4(vec2 p) {
+        const mat4 bayer = mat4(
+            0.0, 8.0, 2.0, 10.0,
+            12.0, 4.0, 14.0, 6.0,
+            3.0, 11.0, 1.0, 9.0,
+            15.0, 7.0, 13.0, 5.0
+        ) / 16.0;
+        return bayer[int(mod(p.x, 4.0))][int(mod(p.y, 4.0))];
+    }
+    #endif
+
     // --- World Generation ---
     float getTerrainHeight(vec2 p) {
         vec2 p_seeded = p + u_seed;
@@ -563,6 +575,23 @@
     }
     #endif
 
+    #if QUALITY_LEVEL == QUALITY_POTATO
+    vec3 getAtmosphere(vec3 rd, vec3 sunDir, out vec3 sunColor) {
+        sunColor = vec3(1.0, 0.9, 0.7);
+        float sunY = max(0.0, sunDir.y);
+        vec3 sky = mix(vec3(0.8, 0.5, 0.9), vec3(0.1, 0.2, 0.4), smoothstep(0.0, 0.2, rd.y));
+        sky = mix(sky, vec3(0.1, 0.05, 0.15), 1.0 - smoothstep(0.0, 0.1, sunY));
+        sky += sunColor * pow(max(0.0, dot(rd, sunDir)), 64.0);
+
+        if (sunDir.y < 0.01) {
+            vec3 stars_uv = normalize(rd);
+            float star_noise = pow(rand(stars_uv.xy * 1000.0), 40.0);
+            float night_fade = 1.0 - smoothstep(0.0, 0.01, sunDir.y);
+            sky += vec3(1.0) * star_noise * night_fade;
+        }
+        return sky;
+    }
+    #else
     vec3 getAtmosphere(vec3 rd, vec3 sunDir, out vec3 sunColor) {
         float sunHeight = max(0.0, sunDir.y);
         float weather_factor = smoothstep(0.0, 1.0, u_weather);
@@ -595,6 +624,7 @@
         }
         return skyColor;
     }
+    #endif
     
     // --- Volumetric Clouds ---
     const float CLOUD_MIN_H = 300.0;
@@ -610,9 +640,12 @@
     }
     
     #if QUALITY_LEVEL >= QUALITY_MEDIUM
-    float henyey_greenstein(float lightDotView, float g) {
-        float g2 = g*g; return (1.0 - g2) / (4.0 * 3.14159 * pow(1.0 + g2 - 2.0 * g * lightDotView, 1.5));
+    // Henyey-Greenstein scattering phase function
+    float henyey_greenstein(float cos_theta, float g) {
+        float g2 = g * g;
+        return (1.0 - g2) / (4.0 * 3.1415926535 * pow(1.0 + g2 - 2.0 * g * cos_theta, 1.5));
     }
+
     void renderVolumetricClouds(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunColor, inout vec3 col, inout float transmittance) {
         if (rd.y < -0.05) return;
         float t_enter = max(0.0, (CLOUD_MIN_H - ro.y) / rd.y);
@@ -677,6 +710,22 @@
         return rain_color;
     }
 
+    #if QUALITY_LEVEL == QUALITY_POTATO
+    Material getMaterial(float id, vec3 p, vec3 n) {
+        Material m;
+        m.smoothness = 0.0;
+        m.specularity = 0.0;
+        if (id < 1.5) { // Terrain
+            vec3 rockColor = vec3(0.35);
+            vec3 grassColor = vec3(0.1, 0.5, 0.2);
+            m.albedo = mix(grassColor, rockColor, pow(1.0 - clamp(n.y, 0.0, 1.0), 2.0));
+            vec3 sandColor = vec3(0.9, 0.8, 0.6);
+            float sandMix = smoothstep(SEA_LEVEL + 1.0, SEA_LEVEL, p.y);
+            m.albedo = mix(m.albedo, sandColor, sandMix);
+        }
+        return m;
+    }
+    #else
     Material getMaterial(float id, vec3 p, vec3 n) {
         Material m; m.albedo = vec3(1.0); m.smoothness = 0.1; m.specularity = 0.1;
         if (id < 1.5) { // Terrain
@@ -703,13 +752,18 @@
         }
         return m;
     }
+    #endif
 
     vec2 rayMarch(vec3 ro, vec3 rd) {
         float d = 0.0; float lastMatId = 0.0;
         for (int i = 0; i < MAX_STEPS; i++) {
             vec3 p = ro + rd * d;
             vec2 res = map(p);
-            d += res.x * clamp(d * 0.01, 0.6, 1.5);
+            #if QUALITY_LEVEL == QUALITY_POTATO
+                d += res.x * 0.8;
+            #else
+                d += res.x * clamp(d * 0.01, 0.6, 1.5);
+            #endif
             lastMatId = res.y;
             if (abs(res.x) < SURF_DIST * max(1.0,d) || d > MAX_DIST) break;
         } return vec2(d, lastMatId);
@@ -786,8 +840,17 @@
             col += renderRain(ro, rd, u_time);
         }
         
-        col *= 1.0 - dot(uv, uv) * 0.25;
-        col = pow(col, vec3(0.8));
+        #if QUALITY_LEVEL == QUALITY_POTATO
+            // Posterize
+            col = floor(col * 6.0) / 6.0;
+            // Dithering
+            col += (bayer4(gl_FragCoord.xy) - 0.5) / 16.0;
+            // Simple vignette
+            col *= 1.0 - dot(uv, uv) * 0.35;
+        #else
+            col *= 1.0 - dot(uv, uv) * 0.25;
+            col = pow(col, vec3(0.8));
+        #endif
 
         gl_FragColor = vec4(col, 1.0);
     }
@@ -825,11 +888,11 @@
             context: null,
             masterGain: null,
             sounds: {
-                wind: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fwind-loop.wav', gainValue: 0.3 },
-                rain: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Frain-loop.wav', gainValue: 0.8 },
-                day: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fbirds-loop.wav', gainValue: 0.5 },
-                night: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fcrickets-loop.wav', gainValue: 0.5 },
-                waves: { url: 'https://cdn.glitch.me/955217a3-7925-4598-96c2-b371b0a85514%2Fwaves-loop.wav', gainValue: 0.7 },
+                wind: { url: 'https://cdn.pixabay.com/audio/2022/11/17/audio_885061681f.mp3', gainValue: 0.3 },
+                rain: { url: 'https://cdn.pixabay.com/audio/2022/05/20/audio_246e7f2231.mp3', gainValue: 0.8 },
+                day: { url: 'https://cdn.pixabay.com/audio/2024/05/01/audio_145b2b2931.mp3', gainValue: 0.5 },
+                night: { url: 'https://cdn.pixabay.com/audio/2022/08/11/audio_4016503b22.mp3', gainValue: 0.5 },
+                waves: { url: 'https://cdn.pixabay.com/audio/2022/07/16/audio_33139049ed.mp3', gainValue: 0.7 },
             },
             isInitialized: false,
             
