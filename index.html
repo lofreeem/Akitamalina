@@ -1,112 +1,1068 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>P2P Draw</title>
-<style>
-body { font-family: monospace; background:#111; color:#0f0; display:flex; flex-direction:column; align-items:center; padding:20px;}
-canvas { border:1px solid #0f0; margin-bottom:10px;}
-#messages { width:500px; height:150px; overflow-y:auto; border:1px solid #0f0; padding:5px; margin-bottom:10px;}
-button { margin:5px; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Procedural World [Hyper-Optimized]</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        #glcanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: pointer;
+        }
+        #start-prompt {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            z-index: 100;
+            cursor: pointer;
+            transition: opacity 0.5s;
+            font-family: monospace;
+        }
+        #start-prompt.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #start-prompt h1 {
+            font-size: 2.5rem;
+            text-shadow: 0 0 12px #4af, 0 0 20px #4af;
+        }
+        #debug-info {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            font-size: 14px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 3px;
+            z-index: 101;
+            text-shadow: 1px 1px 2px black;
+        }
+    </style>
 </head>
 <body>
-<h2>P2P Draw Chat</h2>
-<canvas id="draw" width="400" height="300"></canvas>
-<button onclick="sendDrawing()">Отправить рисунок</button>
-<div id="messages"></div>
-<button onclick="start()">Начать комнату</button>
+    <div id="start-prompt">
+        <h1>Procedural World</h1>
+        <p>Click to Explore</p>
+    </div>
+    <div id="debug-info"></div>
+    <canvas id="glcanvas"></canvas>
 
-<script>
-const canvas = document.getElementById("draw");
-const ctx = canvas.getContext("2d");
-const messages = document.getElementById("messages");
+    <!-- ==== SCENE SHADERS ==== -->
+    <script id="scene-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
 
-let drawing=false;
-canvas.addEventListener("mousedown", e=>drawing=true);
-canvas.addEventListener("mouseup", e=>drawing=false);
-canvas.addEventListener("mouseout", e=>drawing=false);
-canvas.addEventListener("mousemove", e=>{
-  if(!drawing) return;
-  ctx.fillStyle="#0f0";
-  ctx.fillRect(e.offsetX,e.offsetY,4,4);
-});
+    <script id="scene-fragment-shader" type="x-shader/x-fragment">
+    precision highp float;
 
-// ===== P2P =====
-let peers={}, channels={}, uid=Math.random().toString(36).substr(2,6);
-let roomKey='waveRoom';
-let signals = JSON.parse(localStorage.getItem(roomKey)||'{}');
+    // --- Uniforms ---
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform vec3 u_camPos;
+    uniform mat3 u_camMat;
+    uniform vec3 u_sunDir;
 
-function log(msg){ const d=document.createElement("div"); d.textContent=msg; messages.appendChild(d); messages.scrollTop=messages.scrollHeight; }
+    // --- Compile-time Quality Settings ---
+    #define QUALITY_POTATO 0
+    #define QUALITY_LOW 1
+    #define QUALITY_MEDIUM 2
+    #define QUALITY_HIGH 3
+    #define QUALITY_ULTRA 4
 
-function start(){
-  log("Комната запущена...");
-  window.addEventListener("storage", receiveSignal);
-  broadcastSignal({type:'hello', from:uid});
-}
+    #if !defined(QUALITY_LEVEL)
+        #define QUALITY_LEVEL QUALITY_ULTRA
+    #endif
 
-function createPeer(remoteId, offer){
-  const pc = new RTCPeerConnection();
-  peers[remoteId]=pc;
-  const channel = pc.createDataChannel("wave");
-  setupChannel(remoteId, channel);
-  pc.onicecandidate = e=>{ if(e.candidate) broadcastSignal({type:'ice', from:uid, to:remoteId, ice:e.candidate}); };
-  if(offer){
-    pc.setRemoteDescription(new RTCSessionDescription(offer)).then(()=>{
-      pc.createAnswer().then(answer=>{
-        pc.setLocalDescription(answer);
-        broadcastSignal({type:'answer', from:uid, to:remoteId, answer});
-      });
-    });
-  } else {
-    pc.createOffer().then(o=>{
-      pc.setLocalDescription(o);
-      broadcastSignal({type:'offer', from:uid, to:remoteId, offer:o});
-    });
-  }
-}
+    // --- Quality-dependent Constants ---
+    #if QUALITY_LEVEL == QUALITY_ULTRA
+        const int MAX_STEPS = 140; const int AO_STEPS = 6; const int SHADOW_STEPS = 48; const int CLOUD_STEPS = 80;
+    #elif QUALITY_LEVEL == QUALITY_HIGH
+        const int MAX_STEPS = 110; const int AO_STEPS = 4; const int SHADOW_STEPS = 32; const int CLOUD_STEPS = 64;
+    #elif QUALITY_LEVEL == QUALITY_MEDIUM
+        const int MAX_STEPS = 80; const int AO_STEPS = 2; const int SHADOW_STEPS = 16; const int CLOUD_STEPS = 48;
+    #elif QUALITY_LEVEL == QUALITY_LOW
+        const int MAX_STEPS = 60;
+    #else // POTATO
+        const int MAX_STEPS = 45;
+    #endif
 
-function setupChannel(pid, channel){
-  channels[pid]=channel;
-  channel.onopen = ()=>log("Канал открыт с "+pid);
-  channel.onmessage = e=>{
-    if(e.data.startsWith("data:image")){
-      const img = new Image();
-      img.src=e.data;
-      img.onload = ()=>ctx.drawImage(img,0,0);
-      log("Получен рисунок от "+pid);
-    } else log(pid+": "+e.data);
-  };
-}
+    // --- World Constants ---
+    const float MAX_DIST = 3000.0;
+    const float SURF_DIST = 0.002;
+    const float SEA_LEVEL = 0.8;
+    const float SNOW_LINE = 250.0;
 
-// ===== Отправка рисунка =====
-function sendDrawing(){
-  const dataURL = canvas.toDataURL("image/png");
-  Object.values(channels).forEach(ch=>{
-    if(ch.readyState==="open") ch.send(dataURL);
-  });
-  log("Рисунок отправлен!");
-}
+    // --- Material IDs ---
+    const float MAT_TERRAIN = 1.0;
+    const float MAT_TREE_TRUNK = 2.0;
+    const float MAT_PINE_CANOPY = 3.0;
+    const float MAT_WATER = 4.0;
+    const float MAT_DECIDUOUS_CANOPY = 5.0;
+    
+    struct Material { vec3 albedo; float smoothness; float specularity; };
 
-// ===== Волновая синхронизация сигналов =====
-function broadcastSignal(obj){
-  signals[Date.now()+'_'+Math.random()]=obj;
-  localStorage.setItem(roomKey, JSON.stringify(signals));
-  receiveSignal({newValue: JSON.stringify(signals)});
-}
+    // --- Noise Functions ---
+    float rand(vec2 n) { return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453); }
+    float noise(vec2 p) {
+        vec2 ip = floor(p); vec2 u = fract(p); u = u*u*(3.0-2.0*u);
+        return mix(mix(rand(ip), rand(ip + vec2(1,0)), u.x),
+                   mix(rand(ip + vec2(0,1)), rand(ip + vec2(1,1)), u.x), u.y);
+    }
+    float noise(vec3 p) {
+        vec3 ip = floor(p); vec3 u = fract(p); u = u*u*(3.0-2.0*u);
+        return mix(mix(mix(rand(ip.xy), rand(ip.xy+vec2(1,0)), u.x),
+                       mix(rand(ip.xy+vec2(0,1)), rand(ip.xy+vec2(1,1)), u.x), u.y),
+                   mix(mix(rand(ip.xy+vec2(17,31)), rand(ip.xy+vec2(18,31)), u.x),
+                       mix(rand(ip.xy+vec2(17,32)), rand(ip.xy+vec2(18,32)), u.x), u.y), u.z);
+    }
+    mat2 rot(float a) { float s=sin(a),c=cos(a); return mat2(c,-s,s,c); }
+    float fbm(vec2 p, int octaves) {
+        float f = 0.0; float a = 0.5;
+        for (int i=0; i<7; i++) {
+            if (i >= octaves) break;
+            f += a * noise(p); p = rot(1.6) * p * 2.0; a *= 0.5;
+        } return f;
+    }
+    float fbm(vec3 p, int octaves) {
+        float f=0.0; float a=0.5;
+        for (int i=0; i<5; i++) {
+             if (i >= octaves) break;
+            f += a * noise(p); p.xy = rot(1.6) * p.xy; p = p.yzx * 2.0; a *= 0.5;
+        } return f;
+    }
 
-function receiveSignal(e){
-  if(!e.newValue) return;
-  const allSignals = JSON.parse(e.newValue);
-  Object.values(allSignals).forEach(signal=>{
-    if(signal.from===uid) return;
-    if(signal.to && signal.to!==uid) return;
-    if(signal.type==='hello'){ if(!peers[signal.from]) createPeer(signal.from); }
-    else if(signal.type==='offer'){ if(!peers[signal.from]) createPeer(signal.from, signal.offer); }
-    else if(signal.type==='answer'){ peers[signal.from].setRemoteDescription(new RTCSessionDescription(signal.answer)); }
-    else if(signal.type==='ice'){ peers[signal.from].addIceCandidate(new RTCIceCandidate(signal.ice)); }
-  });
-}
-</script>
+    // --- SDFs (Signed Distance Functions) ---
+    #if QUALITY_LEVEL >= QUALITY_LOW
+    float sdCylinder(vec3 p, float h, float r) {
+        vec2 d = abs(vec2(length(p.xz),p.y)) - vec2(r,h);
+        return min(max(d.x,d.y),0.0) + length(max(d,0.0));
+    }
+    float sdSphere(vec3 p, float s) { return length(p)-s; }
+    float sdCone( vec3 p, float h, float r ) {
+        p.y -= h*0.5;
+        vec2 q = vec2( length(p.xz), p.y );
+        vec2 tip = vec2(0.0, h*0.5);
+        vec2 arm = normalize(vec2(r, -h));
+        return dot(q-tip, arm);
+    }
+
+    vec2 map_trees(vec3 p, float terrainHeight) {
+        vec2 id = floor(p.xz / 8.0);
+        float h = rand(id);
+        if (h < 0.85 || terrainHeight > (SNOW_LINE - 10.0)) return vec2(MAX_DIST, 0.0);
+
+        vec2 baseOffset = vec2((h - 0.85) * 20.0, rand(id.yx) * 8.0);
+        vec3 treeBasePos = vec3(id.x * 8.0 + baseOffset.x, terrainHeight, id.y * 8.0 + baseOffset.y);
+        if (treeBasePos.y < SEA_LEVEL + 0.5) return vec2(MAX_DIST, 0.0);
+        
+        p -= treeBasePos;
+        float treeTypeRand = rand(id + vec2(5.5, 3.2));
+
+        if (treeTypeRand > 0.4) { // Pine Tree (60% chance)
+            float treeHeight = 8.0 + h * 8.0;
+            float trunkRadius = 0.25 + h * 0.2;
+            float canopyRadius = 1.5 + h * 1.0;
+            float trunkHeight = treeHeight * 0.4;
+            
+            float trunk = sdCylinder(p - vec3(0, trunkHeight * 0.5, 0), trunkHeight*0.5, trunkRadius);
+            
+            vec3 canopy_p = p - vec3(0, trunkHeight, 0);
+            float canopy = sdCone(canopy_p, treeHeight - trunkHeight, canopyRadius);
+
+            return (trunk < canopy) ? vec2(trunk, MAT_TREE_TRUNK) : vec2(canopy, MAT_PINE_CANOPY);
+
+        } else { // Deciduous Tree (40% chance)
+            float treeHeight = 5.0 + h * 4.0;
+            float trunkRadius = 0.3 + h * 0.3;
+            float canopyRadius = 2.5 + h * 1.5;
+
+            float trunk = sdCylinder(p - vec3(0, treeHeight*0.4, 0), treeHeight*0.4, trunkRadius);
+
+            vec3 canopy_p = p - vec3(0, treeHeight, 0);
+            float canopy = sdSphere(canopy_p, canopyRadius);
+            // Add some smaller spheres to make it more clumpy and natural
+            canopy = min(canopy, sdSphere(canopy_p + vec3(canopyRadius*0.5, 0.2, 0.1), canopyRadius*0.7));
+            canopy = min(canopy, sdSphere(canopy_p + vec3(-canopyRadius*0.4, 0.1, canopyRadius*0.5), canopyRadius*0.8));
+            canopy = min(canopy, sdSphere(canopy_p + vec3(0.1, 0.3, -canopyRadius*0.6), canopyRadius*0.7));
+
+            // Add overall noise
+            canopy -= fbm(canopy_p * 2.0, 3) * 0.6;
+            return (trunk < canopy) ? vec2(trunk, MAT_TREE_TRUNK) : vec2(canopy, MAT_DECIDUOUS_CANOPY);
+        }
+    }
+    #endif
+    
+    // --- World Generation ---
+    float getTerrainHeight(vec2 p) {
+        // Large scale continental shapes
+        float continental_noise = fbm(p * 0.00015, 5);
+        float continental_mask = smoothstep(0.4, 0.6, continental_noise);
+        
+        // Base rolling terrain for the whole world
+        float base_terrain = fbm(p * 0.0008, 6) * 40.0;
+
+        // Massive, sharp mountain ranges using ridged noise
+        float mountain_noise = 1.0 - abs(fbm(p * 0.0015 + vec2(12.3, 45.6), 7));
+        float mountains = pow(mountain_noise, 3.0) * 650.0;
+        
+        // Mix the base terrain with mountains based on the continental mask
+        float height = base_terrain + mountains * continental_mask;
+
+        // Add distance-based Level of Detail (LOD)
+        #if QUALITY_LEVEL >= QUALITY_LOW
+            float dist_to_cam = distance(p, u_camPos.xz);
+
+            // Medium Detail (hills, large rocks) - fades out between 300m and 600m
+            float medium_detail_strength = smoothstep(600.0, 300.0, dist_to_cam);
+            if (medium_detail_strength > 0.0) {
+                height += fbm(p * 0.01, 7) * 5.0 * (1.0 - continental_mask) * medium_detail_strength;
+                height += fbm(p * 0.05, 6) * 1.5 * medium_detail_strength;
+            }
+
+            // Fine Detail (small rocks, ground texture) - fades out between 80m and 200m
+            float fine_detail_strength = smoothstep(200.0, 80.0, dist_to_cam);
+            if (fine_detail_strength > 0.0) {
+                 height += fbm(p * 0.25, 6) * 0.6 * fine_detail_strength;
+            }
+
+            // Ultra Fine Detail (pebbles) - fades out between 30m and 80m
+            #if QUALITY_LEVEL >= QUALITY_HIGH
+                float ultra_fine_detail_strength = smoothstep(80.0, 30.0, dist_to_cam);
+                if (ultra_fine_detail_strength > 0.0) {
+                    height += noise(p * 5.0) * 0.1 * ultra_fine_detail_strength;
+                }
+            #endif
+        #endif
+
+        // Carve out a river system
+        #if QUALITY_LEVEL >= QUALITY_LOW
+            vec2 river_p = p * 0.001;
+            float river_warp = fbm(river_p * 2.0 + vec2(321.4, 876.8), 4) * 150.0;
+            float river_dist = abs(p.y * 0.5 + p.x * 0.5 + river_warp);
+            float river_trench = pow(clamp(1.0 - river_dist * 0.005, 0.0, 1.0), 2.0) * 60.0;
+            height -= river_trench;
+        #endif
+
+        return height;
+    }
+
+    vec2 map(vec3 p) {
+        float terrainHeight = getTerrainHeight(p.xz);
+        float terrainDist = p.y - terrainHeight;
+        vec2 terrain = vec2(terrainDist, MAT_TERRAIN);
+        vec2 res = terrain;
+        #if QUALITY_LEVEL >= QUALITY_LOW
+            vec2 trees = map_trees(p, terrainHeight);
+            res = (terrain.x < trees.x) ? terrain : trees;
+        #endif
+        float water_waves = sin(p.x * 0.5 + u_time) * cos(p.z * 0.2 + u_time) * 0.05;
+        float waterDist = p.y - (SEA_LEVEL + water_waves);
+        if (waterDist < res.x) {
+            res = vec2(waterDist, MAT_WATER);
+        }
+        return res;
+    }
+
+    vec2 map_no_water(vec3 p) {
+        float terrainHeight = getTerrainHeight(p.xz);
+        float terrainDist = p.y - terrainHeight;
+        vec2 terrain = vec2(terrainDist, MAT_TERRAIN);
+        #if QUALITY_LEVEL >= QUALITY_LOW
+            vec2 trees = map_trees(p, terrainHeight);
+            return (terrain.x < trees.x) ? terrain : trees;
+        #else
+            return terrain;
+        #endif
+    }
+    
+    // --- Rendering Functions ---
+    vec3 calcNormal(vec3 p, float eps) {
+        vec2 e = vec2(eps, 0.0);
+        float d = map(p).x;
+        return normalize(vec3(d - map(p - e.xyy).x, d - map(p - e.yxy).x, d - map(p - e.yyx).x));
+    }
+    
+    #if QUALITY_LEVEL >= QUALITY_MEDIUM
+    float calcAO(vec3 p, vec3 n) {
+        float occ = 0.0, sca = 1.0;
+        for(int i=0; i<AO_STEPS; i++) {
+            float h = 0.01 + 0.15*float(i)/float(AO_STEPS-1);
+            float d = map(p + n * h).x;
+            occ += (h - d)*sca;
+            sca *= 0.75;
+        }
+        return clamp(1.0 - 2.5*occ, 0.0, 1.0);
+    }
+    #else
+        float calcAO(vec3 p, vec3 n) { return 1.0; }
+    #endif
+
+    #if QUALITY_LEVEL >= QUALITY_MEDIUM
+    float calcSoftShadow(vec3 ro, vec3 rd, float k) {
+        float res = 1.0, t = 0.05;
+        for (int i = 0; i < SHADOW_STEPS; i++) {
+            if (t > 80.0) break;
+            float h = map(ro + rd * t).x;
+            if (h < SURF_DIST) return 0.0;
+            res = min(res, k * h / t);
+            t += h * 0.8;
+        }
+        return clamp(res, 0.0, 1.0);
+    }
+    #elif QUALITY_LEVEL >= QUALITY_LOW
+    float calcHardShadow(vec3 ro, vec3 rd) {
+        float t = 0.05;
+        for (int i=0; i<25; i++) {
+            if (t > 80.0) break;
+            float h = map(ro + rd * t).x;
+            if (h < SURF_DIST) return 0.0;
+            t += h;
+        }
+        return 1.0;
+    }
+    #endif
+
+    // --- Physically Based Atmosphere ---
+    vec3 getAtmosphere(vec3 rd, vec3 sunDir, out vec3 sunColor) {
+        float sunHeight = max(0.0, sunDir.y);
+        // Rayleigh scattering (makes sky blue)
+        float rayleigh = (1.0 - pow(rd.y, 2.0));
+        vec3 rayleighColor = vec3(0.1, 0.22, 0.4) * rayleigh;
+        // Mie scattering (haze around sun)
+        float mie = pow(max(0.0, dot(rd, sunDir)), 32.0);
+        vec3 mieColor = vec3(0.9, 0.85, 0.7) * mie;
+        // Horizon color
+        float horizonT = pow(1.0 - max(0.0, rd.y), 5.0);
+        vec3 horizonColor = mix(vec3(0.4, 0.3, 0.2), vec3(0.9, 0.6, 0.4), pow(sunHeight, 0.5));
+        vec3 skyColor = rayleighColor + mieColor + horizonColor * horizonT;
+        // Sun color based on height
+        sunColor = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.95, 0.9), smoothstep(0.0, 0.1, sunHeight));
+        skyColor += sunColor * pow(max(0.0, dot(rd, sunDir)), 4096.0); // Sun disc
+        skyColor = mix(vec3(0.0), skyColor, smoothstep(-0.05, 0.05, sunDir.y));
+        return skyColor;
+    }
+    
+    // --- Volumetric Clouds ---
+    const float CLOUD_MIN_H = 300.0;
+    const float CLOUD_MAX_H = 500.0;
+
+    float cloud_map(vec3 p) {
+        p.x += u_time * 10.0;
+        float base_noise = fbm(p * 0.003, 5);
+        float detail_noise = fbm(p * 0.015, 3);
+        float density = smoothstep(0.45, 0.6, base_noise) * (0.5 + 0.5 * detail_noise);
+        float height_gradient = pow(1.0 - abs(p.y - (CLOUD_MIN_H + CLOUD_MAX_H) * 0.5) / ((CLOUD_MAX_H - CLOUD_MIN_H) * 0.5), 1.5);
+        return clamp(density * height_gradient, 0.0, 1.0);
+    }
+    
+    #if QUALITY_LEVEL >= QUALITY_MEDIUM
+    float henyey_greenstein(float lightDotView, float g) {
+        float g2 = g*g;
+        return (1.0 - g2) / (4.0 * 3.14159 * pow(1.0 + g2 - 2.0 * g * lightDotView, 1.5));
+    }
+
+    void renderVolumetricClouds(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunColor, inout vec3 col, inout float transmittance) {
+        if (rd.y < -0.05) return;
+        float t_enter = (CLOUD_MIN_H - ro.y) / rd.y;
+        float t_exit = (CLOUD_MAX_H - ro.y) / rd.y;
+        if (t_enter < 0.0) t_enter = 0.0;
+        if (t_enter >= t_exit || t_enter > MAX_DIST) return;
+        
+        float t = t_enter;
+        float dt = (t_exit - t_enter) / float(CLOUD_STEPS);
+        vec3 light_energy = vec3(0.0);
+        
+        for (int i = 0; i < CLOUD_STEPS; i++) {
+            if (t > MAX_DIST) break;
+            vec3 p = ro + rd * t;
+            float density = cloud_map(p);
+            if (density > 0.01) {
+                float light_dot_view = dot(rd, sunDir);
+                float phase = henyey_greenstein(light_dot_view, 0.4);
+                vec3 scatter_color = sunColor * phase;
+                float step_transmittance = exp(-density * dt * 2.0);
+                light_energy += scatter_color * (1.0 - step_transmittance) * transmittance;
+                transmittance *= step_transmittance;
+                if (transmittance < 0.01) break;
+            }
+            t += dt;
+        }
+        col = mix(col, light_energy, 1.0 - transmittance);
+    }
+    #elif QUALITY_LEVEL >= QUALITY_LOW
+    vec3 render2DClouds(vec3 rd, vec3 sunDir, float time, vec3 skyColor) {
+        if(rd.y < 0.0) return skyColor;
+        vec2 uv1 = rd.xz / rd.y * 0.2 + time * 0.01;
+        vec2 uv2 = rd.xz / rd.y * 0.4 + time * 0.02;
+        float c1 = fbm(uv1, 5);
+        float c2 = fbm(uv2, 6);
+        float cloud_mask = smoothstep(0.4, 0.7, c1) + smoothstep(0.5, 0.6, c2) * 0.5;
+        cloud_mask = clamp(cloud_mask, 0.0, 1.0);
+        
+        vec3 cloud_base = vec3(0.8, 0.82, 0.9);
+        vec3 cloud_lit = vec3(1.0);
+        float light_amount = pow(max(0.0, dot(normalize(rd.xz), normalize(sunDir.xz))), 8.0) * max(0.0, sunDir.y);
+        vec3 cloud_color = mix(cloud_base, cloud_lit, light_amount);
+        
+        return mix(skyColor, cloud_color, cloud_mask * 0.8);
+    }
+    #endif
+
+    #if QUALITY_LEVEL >= QUALITY_HIGH
+    float calcCloudShadow(vec3 p, vec3 sunDir) {
+        if (sunDir.y < 0.0) return 1.0;
+        float t_enter = (CLOUD_MIN_H - p.y) / sunDir.y;
+        float t_exit = (CLOUD_MAX_H - p.y) / sunDir.y;
+        if (t_enter < 0.0 || t_enter >= t_exit) return 1.0;
+
+        float t = t_enter;
+        float dt = (t_exit - t_enter) / 16.0; // Lower step count for performance
+        float transmittance = 1.0;
+
+        for (int i=0; i<16; i++) {
+            vec3 pos = p + sunDir * t;
+            float density = cloud_map(pos);
+            if (density > 0.01) {
+                transmittance *= exp(-density * dt * 2.5);
+                if (transmittance < 0.01) break;
+            }
+            t += dt;
+        }
+        return 0.4 + 0.6 * transmittance; // Make shadows not completely black
+    }
+    #endif
+
+    Material getMaterial(float id, vec3 p, vec3 n) {
+        Material m; m.albedo = vec3(1.0); m.smoothness = 0.1; m.specularity = 0.1;
+        if (id < 1.5) { // Terrain
+            vec3 rockColor = vec3(0.45) * (0.9 + 0.2 * noise(p.xz * 0.5));
+            vec3 grassColor = vec3(0.2, 0.6, 0.15) * (0.9 + 0.2 * noise(p.xz * 1.5 + vec2(123.0)));
+            float steepness = 1.0 - clamp(n.y, 0.0, 1.0);
+            m.albedo = mix(grassColor, rockColor, pow(steepness, 1.5));
+            m.albedo *= (0.8 + 0.2 * noise(p.xz * 30.0));
+            
+            // Add sand near water
+            vec3 sandColor = vec3(0.85, 0.75, 0.55);
+            float sandMix = 1.0 - smoothstep(SEA_LEVEL, SEA_LEVEL + 1.5, p.y);
+            sandMix *= smoothstep(0.9, 0.8, n.y); // More sand on flat areas
+            m.albedo = mix(m.albedo, sandColor, sandMix);
+            m.smoothness = mix(m.smoothness, 0.4, sandMix);
+
+            if (p.y > SNOW_LINE) {
+                float snowNoise = noise(p.xz * 2.0);
+                m.albedo = mix(m.albedo, vec3(0.95), smoothstep(SNOW_LINE - 10.0, SNOW_LINE + 10.0 + snowNoise*3.0, p.y));
+                m.smoothness = 0.6; m.specularity = 0.8;
+            }
+        } else if (id > 1.5 && id < 2.5) { // Tree Trunk
+            m.albedo = vec3(0.4, 0.25, 0.15); 
+            m.smoothness = 0.05;
+        } else if (id > 2.5 && id < 3.5) { // Pine Canopy
+            m.albedo = vec3(0.1, 0.35, 0.1) * (0.8 + 0.4*noise(p*5.0));
+            m.smoothness = 0.1; 
+            m.specularity = 0.05;
+        } else if (id > 4.5 && id < 5.5) { // Deciduous Canopy
+            m.albedo = vec3(0.2, 0.5, 0.1) * (0.8 + 0.4*noise(p*5.0));
+            m.smoothness = 0.1; 
+            m.specularity = 0.05;
+        }
+        return m;
+    }
+
+    vec2 rayMarch(vec3 ro, vec3 rd) {
+        float d = 0.0; float lastMatId = 0.0;
+        for (int i = 0; i < MAX_STEPS; i++) {
+            vec3 p = ro + rd * d;
+            vec2 res = map(p);
+            float h = res.x;
+            lastMatId = res.y;
+            d += h * clamp(d * 0.01, 0.6, 1.5);
+            if (abs(h) < SURF_DIST * max(1.0,d) || d > MAX_DIST) break;
+        } return vec2(d, lastMatId);
+    }
+
+    void main() {
+        vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / u_resolution.y;
+        vec3 ro = u_camPos;
+        vec3 rd = u_camMat * normalize(vec3(uv, 1.8));
+
+        vec3 sunDir = normalize(u_sunDir);
+        vec3 sunColor;
+        vec3 skyColor = getAtmosphere(rd, sunDir, sunColor);
+        vec3 col = skyColor;
+        float transmittance = 1.0;
+
+        #if QUALITY_LEVEL >= QUALITY_MEDIUM
+            renderVolumetricClouds(ro, rd, sunDir, sunColor, col, transmittance);
+        #elif QUALITY_LEVEL >= QUALITY_LOW
+            col = render2DClouds(rd, sunDir, u_time, skyColor);
+        #endif
+
+        vec2 hit = rayMarch(ro, rd);
+        float d = hit.x;
+        float materialID = hit.y;
+
+        if (d < MAX_DIST) {
+            vec3 p = ro + rd * d;
+            float normalEps = SURF_DIST * max(1.0, d * 0.01);
+            vec3 n = calcNormal(p, normalEps);
+            vec3 v = -rd;
+            vec3 surfaceColor;
+
+            if (materialID > 3.5 && materialID < 4.5) { // Water
+                vec3 reflectedRay = reflect(rd, n);
+                vec3 reflectionColor;
+                float reflTransmittance = 1.0;
+                reflectionColor = getAtmosphere(reflectedRay, sunDir, sunColor);
+                #if QUALITY_LEVEL >= QUALITY_MEDIUM
+                    renderVolumetricClouds(p, reflectedRay, sunDir, sunColor, reflectionColor, reflTransmittance);
+                #elif QUALITY_LEVEL >= QUALITY_LOW
+                    reflectionColor = render2DClouds(reflectedRay, sunDir, u_time, reflectionColor);
+                #endif
+                
+                float depth = map_no_water(p - n*0.1).x;
+                vec3 waterColor = mix(vec3(0.1, 0.2, 0.3), vec3(0.0, 0.4, 0.4), exp(-depth*0.2));
+                float fresnel = pow(1.0 - max(0.0, dot(v, n)), 5.0);
+                surfaceColor = mix(waterColor, reflectionColor, fresnel);
+                vec3 h = normalize(sunDir + v);
+                float spec = pow(max(dot(n, h), 0.0), 256.0);
+                surfaceColor += sunColor * spec * 2.0;
+            } else { // Terrain / Trees
+                Material mat = getMaterial(materialID, p, n);
+                float ao = calcAO(p, n);
+                float shadow = 1.0;
+                #if QUALITY_LEVEL >= QUALITY_MEDIUM
+                    shadow = calcSoftShadow(p + n * 0.02, sunDir, 16.0);
+                #elif QUALITY_LEVEL >= QUALITY_LOW
+                    shadow = calcHardShadow(p + n * 0.02, sunDir);
+                #endif
+
+                #if QUALITY_LEVEL >= QUALITY_HIGH
+                    shadow *= calcCloudShadow(p, sunDir);
+                #endif
+
+                float diff = max(dot(n, sunDir), 0.0);
+                vec3 h = normalize(sunDir + v);
+                float spec = pow(max(dot(n, h), 0.0), 1.0/max(0.01, (1.0 - mat.smoothness)));
+                vec3 skyLight = skyColor * (0.5 + 0.5 * n.y);
+                vec3 lighting = mat.albedo * (skyLight * ao + sunColor * diff * shadow);
+                lighting += sunColor * spec * shadow * mat.specularity * ao;
+                surfaceColor = lighting;
+            }
+            
+            // Atmospheric Haze
+            float heightFactor = exp(-ro.y * 0.005);
+            float fogAmount = exp(-d * (0.0002 + heightFactor * 0.002));
+            vec3 fogColor = skyColor;
+            
+            // Blend surface with clouds/sky behind it
+            vec3 foggedSurface = mix(fogColor, surfaceColor, fogAmount);
+            col = mix(foggedSurface, col, 1.0 - transmittance);
+        }
+        
+        gl_FragColor = vec4(col, 1.0);
+    }
+    </script>
+    
+    <!-- ==== POST-PROCESSING SHADERS ==== -->
+    <script id="post-vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        varying vec2 v_texCoord;
+        void main() {
+            v_texCoord = a_position * 0.5 + 0.5;
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+    
+    <script id="passthrough-fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform sampler2D u_inputTexture;
+        varying vec2 v_texCoord;
+        void main() {
+            vec3 col = texture2D(u_inputTexture, v_texCoord).rgb;
+            col = pow(col, vec3(0.8)); // Gamma correction
+            gl_FragColor = vec4(col, 1.0);
+        }
+    </script>
+
+    <script id="bright-pass-fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform sampler2D u_inputTexture;
+        varying vec2 v_texCoord;
+        void main() {
+            vec3 color = texture2D(u_inputTexture, v_texCoord).rgb;
+            float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
+            float bright = smoothstep(0.8, 1.2, brightness); // Extract pixels with brightness > 0.8
+            gl_FragColor = vec4(color * bright, 1.0);
+        }
+    </script>
+
+    <script id="blur-fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform sampler2D u_inputTexture;
+        uniform vec2 u_texelSize;
+        uniform vec2 u_direction; // e.g., (1.0, 0.0) for horizontal
+        varying vec2 v_texCoord;
+
+        // Optimized 9-tap Gaussian Blur
+        void main() {
+            vec4 color = vec4(0.0);
+            float weights[5];
+            weights[0] = 0.227027;
+            weights[1] = 0.1945946;
+            weights[2] = 0.1216216;
+            weights[3] = 0.054054;
+            weights[4] = 0.016216;
+
+            color += texture2D(u_inputTexture, v_texCoord) * weights[0];
+            for (int i = 1; i < 5; i++) {
+                vec2 offset = u_direction * float(i) * u_texelSize;
+                color += texture2D(u_inputTexture, v_texCoord + offset) * weights[i];
+                color += texture2D(u_inputTexture, v_texCoord - offset) * weights[i];
+            }
+
+            gl_FragColor = color;
+        }
+    </script>
+    
+    <script id="composite-fragment-shader" type="x-shader/x-fragment">
+        precision highp float;
+        uniform sampler2D u_sceneTexture;
+        uniform sampler2D u_bloomTexture;
+        uniform float u_chromaticAberration;
+        uniform float u_bloomIntensity;
+        varying vec2 v_texCoord;
+
+        void main() {
+            // --- Chromatic Aberration ---
+            vec2 centeredUV = (v_texCoord - 0.5) * 2.0; // Range [-1, 1]
+            float offset = u_chromaticAberration * 0.002 * length(centeredUV);
+            
+            float r = texture2D(u_sceneTexture, v_texCoord - offset).r;
+            float g = texture2D(u_sceneTexture, v_texCoord).g;
+            float b = texture2D(u_sceneTexture, v_texCoord + offset).b;
+            vec3 sceneColor = vec3(r, g, b);
+
+            // --- Bloom ---
+            vec3 bloomColor = texture2D(u_bloomTexture, v_texCoord).rgb;
+            
+            // --- Composition ---
+            vec3 finalColor = sceneColor + bloomColor * u_bloomIntensity;
+            
+            // --- Tonemapping & Gamma Correction ---
+            finalColor = pow(finalColor, vec3(0.8));
+            
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    </script>
+
+
+    <!-- Main Application Logic -->
+    <script type="module">
+        const canvas = document.getElementById('glcanvas');
+        const gl = canvas.getContext('webgl', { antialias: false, powerPreference: 'high-performance' }) 
+                   || canvas.getContext('experimental-webgl');
+
+        if (!gl) {
+            alert('Your browser does not support WebGL.');
+            throw new Error('WebGL not supported');
+        }
+
+        const camera = { 
+            pos: [0, 25, -5], yaw: Math.PI, pitch: -0.2,
+            velocity: [0, 0, 0], angularVelocity: { yaw: 0, pitch: 0 }
+        };
+        const input = { keys: new Set() };
+        let timeOfDay = 0.25;
+        
+        const MOUSE_SENSITIVITY = 0.002;
+        const ACCELERATION = 120.0;
+        const DAMPING = 15.0;
+        const ANGULAR_DAMPING = 10.0;
+
+        const perf = {
+            frameTimes: [],
+            avgFps: 60,
+            currentQuality: '',
+            resolutionScale: 1.0,
+            isSwitching: false,
+            
+            update: function(deltaTime) {
+                this.frameTimes.push(1.0 / deltaTime);
+                if (this.frameTimes.length > 60) this.frameTimes.shift();
+                if (this.frameTimes.length < 30 || this.isSwitching) return;
+
+                this.avgFps = this.frameTimes.reduce((a, b) => a + b) / this.frameTimes.length;
+
+                const q = this.currentQuality;
+                if (this.avgFps < 28) {
+                    if (q === 'ULTRA') this.setQuality('HIGH');
+                    else if (q === 'HIGH') this.setQuality('MEDIUM');
+                    else if (q === 'MEDIUM') this.setQuality('LOW');
+                    else if (q === 'LOW') this.setQuality('POTATO');
+                } else if (this.avgFps > 58) {
+                    if (q === 'POTATO') this.setQuality('LOW');
+                    else if (q === 'LOW') this.setQuality('MEDIUM');
+                    else if (q === 'MEDIUM') this.setQuality('HIGH');
+                    else if (q === 'HIGH') this.setQuality('ULTRA');
+                }
+            },
+            setQuality: async function(level) {
+                if (this.currentQuality === level || this.isSwitching) return;
+                console.log(`Adapting quality to: ${level}`);
+                this.isSwitching = true;
+                this.currentQuality = level;
+                
+                if (level === 'ULTRA') this.resolutionScale = 1.0;
+                else if (level === 'HIGH') this.resolutionScale = 0.9;
+                else if (level === 'MEDIUM') this.resolutionScale = 0.75;
+                else if (level === 'LOW') this.resolutionScale = 0.6;
+                else this.resolutionScale = 0.5;
+                
+                await rebuildSceneProgram(level);
+                this.frameTimes = [];
+                this.isSwitching = false;
+            }
+        };
+        
+        let sceneProgramInfo, postPrograms = {};
+        let sceneFBO, bloomFBOs = [], tempFBO;
+        let sceneVertexShader;
+        const fullScreenQuadBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, fullScreenQuadBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source); gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error: ' + gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader); return null;
+            }
+            return shader;
+        }
+
+        function createProgram(vertexShader, fragmentShaderSource) {
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+            if (!fragmentShader) return null; // Bail if fragment shader failed to compile
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program linking error: ' + gl.getProgramInfoLog(program));
+            }
+            gl.deleteShader(fragmentShader);
+            return program;
+        }
+
+        async function rebuildSceneProgram(quality) {
+            return new Promise((resolve) => {
+                if (sceneProgramInfo && sceneProgramInfo.program) {
+                    gl.deleteProgram(sceneProgramInfo.program);
+                }
+                const qualityLevels = {'POTATO': 0, 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3, 'ULTRA': 4};
+                const fragSource = `#define QUALITY_LEVEL ${qualityLevels[quality]}\n${document.getElementById('scene-fragment-shader').text}`;
+                
+                const program = createProgram(sceneVertexShader, fragSource);
+
+                sceneProgramInfo = {
+                    program,
+                    attribs: { position: gl.getAttribLocation(program, 'a_position') },
+                    uniforms: {
+                        resolution: gl.getUniformLocation(program, 'u_resolution'),
+                        time: gl.getUniformLocation(program, 'u_time'),
+                        camPos: gl.getUniformLocation(program, 'u_camPos'),
+                        camMat: gl.getUniformLocation(program, 'u_camMat'),
+                        sunDir: gl.getUniformLocation(program, 'u_sunDir'),
+                    },
+                };
+                resolve();
+            });
+        }
+        
+        function createFramebuffer(width, height) {
+            const fbo = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            return { fbo, texture, width, height };
+        }
+
+        function resizeFramebuffers(width, height) {
+            gl.deleteFramebuffer(sceneFBO?.fbo);
+            sceneFBO = createFramebuffer(width, height);
+
+            let w = width / 2;
+            let h = height / 2;
+            gl.deleteFramebuffer(tempFBO?.fbo);
+            tempFBO = createFramebuffer(w, h);
+
+            for(let i = 0; i < 4; i++) {
+                 gl.deleteFramebuffer(bloomFBOs[i]?.fbo);
+                 bloomFBOs[i] = createFramebuffer(w, h);
+                 w = Math.round(w / 2);
+                 h = Math.round(h / 2);
+            }
+        }
+        
+        function drawPostProcessingQuad(programInfo, inputTextures) {
+            gl.useProgram(programInfo.program);
+            gl.bindBuffer(gl.ARRAY_BUFFER, fullScreenQuadBuffer);
+            gl.vertexAttribPointer(programInfo.attribs.position, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(programInfo.attribs.position);
+
+            Object.keys(inputTextures).forEach((uniformName, i) => {
+                gl.activeTexture(gl.TEXTURE0 + i);
+                gl.bindTexture(gl.TEXTURE_2D, inputTextures[uniformName]);
+                gl.uniform1i(programInfo.uniforms[uniformName], i);
+            });
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+
+        const startPrompt = document.getElementById('start-prompt');
+        const debugInfo = document.getElementById('debug-info');
+        function requestLockAndStart() {
+            if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+            if (!startPrompt.classList.contains('hidden')) startPrompt.classList.add('hidden');
+        }
+        canvas.addEventListener('click', requestLockAndStart);
+        startPrompt.addEventListener('click', requestLockAndStart);
+        window.addEventListener('keydown', (e) => input.keys.add(e.code));
+        window.addEventListener('keyup', (e) => input.keys.delete(e.code));
+        window.addEventListener('keydown', (e) => { if (e.code === 'Escape') document.exitPointerLock() });
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === canvas) document.addEventListener('mousemove', updateMouse, false);
+            else document.removeEventListener('mousemove', updateMouse, false);
+        });
+        function updateMouse(e) {
+            camera.angularVelocity.yaw -= e.movementX * MOUSE_SENSITIVITY;
+            camera.angularVelocity.pitch -= e.movementY * MOUSE_SENSITIVITY;
+        }
+
+        function updateCamera(deltaTime) {
+            camera.yaw += camera.angularVelocity.yaw;
+            camera.pitch += camera.angularVelocity.pitch;
+            camera.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.pitch));
+            
+            camera.angularVelocity.yaw *= Math.exp(-ANGULAR_DAMPING * deltaTime);
+            camera.angularVelocity.pitch *= Math.exp(-ANGULAR_DAMPING * deltaTime);
+            
+            const boost = input.keys.has('ShiftLeft') || input.keys.has('ShiftRight');
+            const currentAcceleration = ACCELERATION * (boost ? 5.0 : 1.0);
+            const forward = (input.keys.has('KeyW')||input.keys.has('ArrowUp')?1:0)-(input.keys.has('KeyS')||input.keys.has('ArrowDown')?1:0);
+            const right = (input.keys.has('KeyD')||input.keys.has('ArrowRight')?1:0)-(input.keys.has('KeyA')||input.keys.has('ArrowLeft')?1:0);
+            const up = (input.keys.has('KeyE') || input.keys.has('Space') ? 1:0) - (input.keys.has('KeyQ')?1:0);
+            
+            let moveX = (forward * Math.sin(camera.yaw)) + (right * Math.cos(camera.yaw));
+            let moveZ = (forward * Math.cos(camera.yaw)) - (right * Math.sin(camera.yaw));
+            
+            const len = Math.sqrt(moveX*moveX + moveZ*moveZ);
+            if (len > 0.001) { moveX /= len; moveZ /= len; }
+
+            const targetVelocity = [moveX * currentAcceleration, up * currentAcceleration, moveZ * currentAcceleration];
+            for(let i=0; i<3; ++i) {
+                const dv = targetVelocity[i] - camera.velocity[i];
+                const dampingFactor = (targetVelocity[i] === 0) ? DAMPING : 1.0;
+                camera.velocity[i] += dv * dampingFactor * deltaTime;
+            }
+            camera.pos[0] += camera.velocity[0] * deltaTime;
+            camera.pos[1] += camera.velocity[1] * deltaTime;
+            camera.pos[2] += camera.velocity[2] * deltaTime;
+        }
+        
+        let lastTime = 0;
+        function render(time) {
+            time *= 0.001;
+            const deltaTime = Math.min(0.1, time - lastTime);
+            lastTime = time;
+
+            if (document.pointerLockElement === canvas && deltaTime > 0) {
+                 updateCamera(deltaTime);
+                 perf.update(deltaTime);
+            }
+            timeOfDay = (timeOfDay + deltaTime * 0.005) % 1.0;
+
+            const dpr = window.devicePixelRatio || 1;
+            const displayWidth = Math.round(canvas.clientWidth * dpr * perf.resolutionScale);
+            const displayHeight = Math.round(canvas.clientHeight * dpr * perf.resolutionScale);
+            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+                if(displayWidth > 0 && displayHeight > 0) {
+                    resizeFramebuffers(displayWidth, displayHeight);
+                }
+            }
+
+            if (!sceneFBO) { // Don't render if framebuffers aren't ready
+                requestAnimationFrame(render);
+                return;
+            }
+
+            // 1. Render Scene to FBO
+            gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFBO.fbo);
+            gl.viewport(0, 0, sceneFBO.width, sceneFBO.height);
+            gl.useProgram(sceneProgramInfo.program);
+            gl.bindBuffer(gl.ARRAY_BUFFER, fullScreenQuadBuffer);
+            gl.vertexAttribPointer(sceneProgramInfo.attribs.position, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(sceneProgramInfo.attribs.position);
+
+            const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw);
+            const cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
+            const camMat = [cy, 0, -sy, sp*sy, cp, sp*cy, cp*sy, -sp, cp*cy];
+            const sunAngle = timeOfDay * 2.0 * Math.PI - (Math.PI / 2.0);
+            const sunDir = [Math.cos(sunAngle), Math.sin(sunAngle), 0.3];
+
+            gl.uniform2f(sceneProgramInfo.uniforms.resolution, sceneFBO.width, sceneFBO.height);
+            gl.uniform1f(sceneProgramInfo.uniforms.time, time);
+            gl.uniform3fv(sceneProgramInfo.uniforms.camPos, camera.pos);
+            gl.uniformMatrix3fv(sceneProgramInfo.uniforms.camMat, false, camMat);
+            gl.uniform3fv(sceneProgramInfo.uniforms.sunDir, sunDir);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            
+            // 2. Post Processing
+            const postProcessingEnabled = perf.currentQuality === 'HIGH' || perf.currentQuality === 'ULTRA';
+
+            if (postProcessingEnabled) {
+                // 2a. Bright Pass
+                gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFBOs[0].fbo);
+                gl.viewport(0, 0, bloomFBOs[0].width, bloomFBOs[0].height);
+                drawPostProcessingQuad(postPrograms.bright, { u_inputTexture: sceneFBO.texture });
+
+                // 2b. Blur (Downsample)
+                for(let i = 1; i < 4; i++) {
+                    const fbo = bloomFBOs[i];
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, tempFBO.fbo); // H-blur to temp
+                    gl.viewport(0, 0, fbo.width, fbo.height);
+                    gl.useProgram(postPrograms.blur.program);
+                    gl.uniform2f(postPrograms.blur.uniforms.u_texelSize, 1 / bloomFBOs[i-1].width, 1 / bloomFBOs[i-1].height);
+                    gl.uniform2f(postPrograms.blur.uniforms.u_direction, 1, 0);
+                    drawPostProcessingQuad(postPrograms.blur, { u_inputTexture: bloomFBOs[i-1].texture });
+
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo); // V-blur to main
+                    gl.viewport(0, 0, fbo.width, fbo.height);
+                    gl.uniform2f(postPrograms.blur.uniforms.u_direction, 0, 1);
+                    drawPostProcessingQuad(postPrograms.blur, { u_inputTexture: tempFBO.texture });
+                }
+
+                // 2c. Blur (Upsample & Add)
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.ONE, gl.ONE);
+                for(let i = 2; i >= 0; i--) {
+                    const fbo = bloomFBOs[i];
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, tempFBO.fbo); // H-blur to temp
+                    gl.viewport(0, 0, fbo.width, fbo.height);
+                    gl.useProgram(postPrograms.blur.program);
+                    gl.uniform2f(postPrograms.blur.uniforms.u_texelSize, 1 / bloomFBOs[i+1].width, 1 / bloomFBOs[i+1].height);
+                    gl.uniform2f(postPrograms.blur.uniforms.u_direction, 1, 0);
+                    drawPostProcessingQuad(postPrograms.blur, { u_inputTexture: bloomFBOs[i+1].texture });
+                    
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo); // V-blur and add to main
+                    gl.viewport(0, 0, fbo.width, fbo.height);
+                    gl.uniform2f(postPrograms.blur.uniforms.u_direction, 0, 1);
+                    drawPostProcessingQuad(postPrograms.blur, { u_inputTexture: tempFBO.texture });
+                }
+                gl.disable(gl.BLEND);
+
+
+                // 2d. Final Composite
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                gl.useProgram(postPrograms.composite.program);
+                if (perf.currentQuality === 'ULTRA') {
+                    gl.uniform1f(postPrograms.composite.uniforms.u_chromaticAberration, 1.0);
+                    gl.uniform1f(postPrograms.composite.uniforms.u_bloomIntensity, 1.2);
+                } else { // HIGH
+                    gl.uniform1f(postPrograms.composite.uniforms.u_chromaticAberration, 0.0);
+                     gl.uniform1f(postPrograms.composite.uniforms.u_bloomIntensity, 1.0);
+                }
+                drawPostProcessingQuad(postPrograms.composite, { 
+                    u_sceneTexture: sceneFBO.texture,
+                    u_bloomTexture: bloomFBOs[0].texture
+                });
+
+            } else {
+                // 3. Passthrough if no effects
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+                drawPostProcessingQuad(postPrograms.passthrough, { u_inputTexture: sceneFBO.texture });
+            }
+
+            debugInfo.textContent = `FPS: ${Math.round(perf.avgFps)} | Quality: ${perf.currentQuality} | Pos: ${camera.pos.map(c=>c.toFixed(1)).join(', ')}`;
+            requestAnimationFrame(render);
+        }
+        
+        async function main() {
+            // Compile scene shaders
+            sceneVertexShader = createShader(gl, gl.VERTEX_SHADER, document.getElementById('scene-vertex-shader').text);
+
+            // Compile all post-processing shaders once
+            const postVertexShader = createShader(gl, gl.VERTEX_SHADER, document.getElementById('post-vertex-shader').text);
+            const postShaderSources = {
+                passthrough: 'passthrough-fragment-shader',
+                bright: 'bright-pass-fragment-shader',
+                blur: 'blur-fragment-shader',
+                composite: 'composite-fragment-shader'
+            };
+            for(const name in postShaderSources) {
+                const program = createProgram(postVertexShader, document.getElementById(postShaderSources[name]).text);
+                if (!program) {
+                    console.error(`Failed to create post-processing program: ${name}`);
+                    // You might want to handle this more gracefully, e.g., by disabling post-processing
+                    return;
+                }
+                postPrograms[name] = {
+                    program,
+                    attribs: { position: gl.getAttribLocation(program, 'a_position') },
+                    uniforms: {}
+                };
+                // A simple way to get all uniforms
+                const uniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+                for(let i=0; i<uniformCount; i++) {
+                    const uniformInfo = gl.getActiveUniform(program, i);
+                    postPrograms[name].uniforms[uniformInfo.name] = gl.getUniformLocation(program, uniformInfo.name);
+                }
+            }
+            gl.deleteShader(postVertexShader);
+
+
+            const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+            await perf.setQuality(isMobile ? 'MEDIUM' : 'ULTRA');
+            requestAnimationFrame(render);
+        }
+
+        main();
+    </script>
 </body>
 </html>
