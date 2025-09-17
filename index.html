@@ -476,7 +476,20 @@
             3.0, 11.0, 1.0, 9.0,
             15.0, 7.0, 13.0, 5.0
         ) / 16.0;
-        return bayer[int(mod(p.x, 4.0))][int(mod(p.y, 4.0))];
+        
+        int c = int(mod(p.x, 4.0));
+        int r = int(mod(p.y, 4.0));
+        
+        vec4 col;
+        if (c == 0) col = bayer[0];
+        else if (c == 1) col = bayer[1];
+        else if (c == 2) col = bayer[2];
+        else col = bayer[3];
+
+        if (r == 0) return col.x;
+        else if (r == 1) return col.y;
+        else if (r == 2) return col.z;
+        else return col.w;
     }
     #endif
 
@@ -888,11 +901,11 @@
             context: null,
             masterGain: null,
             sounds: {
-                wind: { url: 'https://cdn.pixabay.com/audio/2022/11/17/audio_885061681f.mp3', gainValue: 0.3 },
-                rain: { url: 'https://cdn.pixabay.com/audio/2022/05/20/audio_246e7f2231.mp3', gainValue: 0.8 },
-                day: { url: 'https://cdn.pixabay.com/audio/2024/05/01/audio_145b2b2931.mp3', gainValue: 0.5 },
-                night: { url: 'https://cdn.pixabay.com/audio/2022/08/11/audio_4016503b22.mp3', gainValue: 0.5 },
-                waves: { url: 'https://cdn.pixabay.com/audio/2022/07/16/audio_33139049ed.mp3', gainValue: 0.7 },
+                wind: { url: 'https://cdn.pixabay.com/download/audio/2022/10/20/audio_1c5b16260a.mp3', gainValue: 0.3 },
+                rain: { url: 'https://cdn.pixabay.com/download/audio/2023/08/04/audio_354b099a22.mp3', gainValue: 0.8 },
+                day: { url: 'https://cdn.pixabay.com/download/audio/2022/06/14/audio_34b7f339f4.mp3', gainValue: 0.5 },
+                night: { url: 'https://cdn.pixabay.com/download/audio/2021/08/04/audio_51a965d194.mp3', gainValue: 0.5 },
+                waves: { url: 'https://cdn.pixabay.com/download/audio/2024/02/09/audio_6a8e874136.mp3', gainValue: 0.7 },
             },
             isInitialized: false,
             
